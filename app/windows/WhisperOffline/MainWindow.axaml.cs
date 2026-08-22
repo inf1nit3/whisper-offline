@@ -3,11 +3,16 @@ using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
-using Avalonia.Platform.Storage;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 
 namespace WhisperOffline;
 
@@ -21,6 +26,12 @@ public partial class MainWindow : Window
     private CancellationTokenSource? downloadCts;
     private ModelInfo? downloading;
     private bool pickerOpen = false;
+
+    // Diktat-Modus (globaler Hotkey)
+    private bool dictating = false;
+    private IntPtr dictationTarget = IntPtr.Zero;
+    private bool allowClose = false;
+    private TrayIcon? tray;
 
     private string SettingsPath => Path.Combine(WhisperCli.BaseDir, "settings.json");
 
@@ -58,6 +69,104 @@ public partial class MainWindow : Window
         {
             _ = OpenPickerAsync();
         }
+
+        // In Tray minimieren statt beenden; Hotkey aktivieren
+        Closing += (_, e) =>
+        {
+            if (!allowClose) { e.Cancel = true; Hide(); }
+        };
+        SetupTray();
+        HotkeyHook.Start(() => Dispatcher.UIThread.Post(ToggleDictation));
+    }
+
+    private void SetupTray()
+    {
+        // 32x32-Icon aus dem Code zeichnen (blauer Grund, weißes Mikrofon-Symbol)
+        var rtb = new RenderTargetBitmap(new PixelSize(32, 32));
+        using (var ctx = rtb.CreateDrawingContext())
+        {
+            ctx.DrawRectangle(Brushes.SteelBlue, null, new Rect(0, 0, 32, 32), 6, 6);
+            ctx.DrawEllipse(Brushes.White, null, new Point(16, 13), 4, 6);
+            ctx.DrawRectangle(Brushes.White, null, new Rect(12, 19, 8, 2), 1, 1);
+            ctx.DrawRectangle(Brushes.White, null, new Rect(15, 21, 2, 5), 1, 1);
+            ctx.DrawRectangle(Brushes.White, null, new Rect(10, 25, 12, 2), 1, 1);
+        }
+
+        var menu = new NativeMenu();
+        var open = new NativeMenuItem { Header = "Öffnen" };
+        open.Click += (_, _) => { Show(); Activate(); };
+        var quit = new NativeMenuItem { Header = "Beenden" };
+        quit.Click += (_, _) =>
+        {
+            allowClose = true;
+            tray?.Dispose();
+            Close();
+            (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+        };
+        menu.Items.Add(open);
+        menu.Items.Add(new NativeMenuItemSeparator());
+        menu.Items.Add(quit);
+
+        tray = new TrayIcon
+        {
+            Icon = new WindowIcon(rtb),
+            Menu = menu,
+            ToolTipText = "Whisper Offline — Strg+Alt+Leertaste: Diktat",
+        };
+        tray.Clicked += (_, _) => { Show(); Activate(); };
+        TrayIcon.SetIcons(Application.Current, new TrayIcons { tray });
+    }
+
+    /// Strg+Alt+Leertaste: Aufnahme starten/beenden; danach wird der Text
+    /// automatisch per Strg+V ins zuvor fokussierte Fenster (z. B. Chat) eingefügt.
+    private async void ToggleDictation()
+    {
+        if (busy || pickerOpen || downloading != null || dictating && !recorder.IsRecording) return;
+        if (!File.Exists(WhisperCli.SelectedModel)) return;
+
+        if (!dictating)
+        {
+            dictationTarget = PasteHelper.ForegroundWindow();
+            if (dictationTarget == IntPtr.Zero) return;
+            if (!recorder.Start()) return;
+            dictating = true;
+            StatusLabel.Text = "🎙 Diktat läuft — Strg+Alt+Leertaste beendet & fügt ein";
+            return;
+        }
+
+        var samples = recorder.Stop();
+        dictating = false;
+        if (samples.Length < 1600) // < 0,1 s
+        {
+            StatusLabel.Text = "Diktat zu kurz";
+            return;
+        }
+
+        busy = true;
+        StatusLabel.Text = "Transkribiere Diktat…";
+        var lang = Lang;
+        var text = await Task.Run(() =>
+        {
+            var wav = Path.Combine(Path.GetTempPath(), "whisper_offline_dict.wav");
+            WavWriter.Write16kMono(wav, samples);
+            return WhisperCli.Transcribe(wav, lang, out var err);
+        });
+        text = text.Trim();
+        if (text.Length == 0)
+        {
+            StatusLabel.Text = "Kein Text erkannt";
+            busy = false;
+            return;
+        }
+
+        AppendTranscript(text);
+        if (Clipboard != null) await Clipboard.SetTextAsync(text);
+        await Task.Delay(250);              // Zwischenablage settling
+        PasteHelper.FocusWindow(dictationTarget);
+        await Task.Delay(150);              // Fokuswechsel settling
+        PasteHelper.CtrlV();                // fügt in den Chat ein
+        StatusLabel.Text = "Diktat eingefügt ✓";
+        busy = false;
     }
 
     private void UpdateModelLabel() =>

@@ -129,6 +129,26 @@ Statisches Hosting auf dem eigenen VPS (nginx auf Port 8901):
 URL in beiden Apps an einer Stelle konfiguriert:
 Android `ModelConfig.kt`, Windows `ModelConfig.cs`.
 
+## Diktat-Modus
+
+**Windows:** App läuft (minimierbar in den Tray). **Strg+Alt+Leertaste** startet überall
+die Aufnahme — unabhängig davon, welche App im Vordergrund ist. Erneut drücken: Text wird
+transkribiert, in die Zwischenablage gelegt und per simuliertem **Strg+V automatisch ins
+zuvor fokussierte Fenster eingefügt** (Chat, E-Mail, Dokument …).
+
+**Android:** Schnelleinstellungs-Kachel „Whisper Diktat" (Schnelleinstellungen bearbeiten →
+Kachel hinzufügen). Ein Tipp öffnet das Diktat-Overlay, nimmt sofort auf, transkribiert nach
+„Fertig" und kopiert den Text in die Zwischenablage — danach im Chat einfügen (Android
+erlaubt Apps ohne Sonderrechte kein automatisches Einfügen in fremde Apps; direktes
+Einfügen wäre über eine eigene Tastatur/RecognitionService möglich, siehe Roadmap).
+
+## Roadmap-Ideen
+
+- Android: eigenes IME bzw. RecognitionService → Diktattext landet direkt im Textfeld
+  (wie FUTO Voice Input), statt über die Zwischenablage
+- Automatische Spracherkennung pro Segment, Modell-Wechsel ohne Neustart des Downloads
+- Aufnahmestopp durch Stille (VAD)
+
 ## Lizenzhinweise
 
 - Whisper-Modelle: MIT (OpenAI)

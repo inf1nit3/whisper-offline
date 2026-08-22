@@ -27,8 +27,12 @@
                         Click="OnFileClick" />
             </StackPanel>
 
-            <TextBlock Grid.Row="2" x:Name="StatusLabel" Text="" Margin="0,12,0,0"
-                       Foreground="Gray" TextWrapping="Wrap" />
+            <StackPanel Grid.Row="2" Margin="0,12,0,0">
+                <TextBlock Text="Tipp: Strg+Alt+Leertaste = Diktat in das aktive Fenster (z. B. Chat) einfügen"
+                           FontSize="12" Foreground="Gray" TextWrapping="Wrap" />
+                <TextBlock x:Name="StatusLabel" Text="" Margin="0,6,0,0"
+                           Foreground="Gray" TextWrapping="Wrap" />
+            </StackPanel>
 
             <TextBox Grid.Row="3" x:Name="TranscriptBox" Margin="0,12,0,0"
                      AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="False"
