@@ -17,3 +17,12 @@ tools/dotnet/
 *.apk
 *.zip
 .DS_Store
+
+# Externe Header-Repos (siehe README: Vulkan-Build)
+tools/SPIRV-Headers/
+tools/Vulkan-Headers/
+tools/Vulkan-Hpp/
+tools/spirv-install/
+tools/vk-install/
+tools/spirv-build/
+tools/vkh-build/
