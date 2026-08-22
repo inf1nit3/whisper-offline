@@ -11,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -56,6 +58,18 @@ fun App() {
     var elapsedS by remember { mutableStateOf(0f) }
     var language by remember { mutableStateOf("auto") }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var showHistory by remember { mutableStateOf(false) }
+    var history by remember { mutableStateOf(listOf<HistoryEntry>()) }
+
+    fun recordHistory(text: String, audioSeconds: Float) {
+        HistoryStore.add(context, HistoryEntry(
+            timeMs = System.currentTimeMillis(),
+            text = text,
+            model = modelFile ?: "",
+            language = language,
+            audioSeconds = audioSeconds,
+        ))
+    }
 
     // Modell-Auswahl / Download
     var pickerVisible by remember { mutableStateOf(false) }
@@ -155,6 +169,7 @@ fun App() {
                     }
                     elapsedS = (System.currentTimeMillis() - t0) / 1000f
                     transcript = text.trim()
+                    if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
                     statusMessage = null
                 } catch (e: Exception) {
                     statusMessage = "Fehler: ${e.message}"
@@ -166,7 +181,19 @@ fun App() {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Scheisssewasser's Whisper") }) }
+        topBar = {
+            TopAppBar(
+                title = { Text("Scheisssewasser's Whisper") },
+                actions = {
+                    IconButton(onClick = {
+                        history = HistoryStore.load(context)
+                        showHistory = true
+                    }) {
+                        Icon(Icons.Filled.History, "Verlauf")
+                    }
+                }
+            )
+        }
     ) { padding ->
         Box(
             Modifier
@@ -231,6 +258,7 @@ fun App() {
                                 }
                                 elapsedS = (System.currentTimeMillis() - t0) / 1000f
                                 transcript = text.trim()
+                                if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
                                 statusMessage = null
                                 busy = false
                             }
@@ -321,6 +349,91 @@ fun App() {
                     onActivate = { loadModel(it); pickerVisible = false },
                     onDismissIfModelReady = { if (modelReady) pickerVisible = false },
                 )
+            }
+
+            if (showHistory) {
+                HistoryOverlay(
+                    entries = history,
+                    onClose = { showHistory = false },
+                    onCopy = { clipboard.setText(AnnotatedString(it)) },
+                    onDelete = {
+                        HistoryStore.delete(context, it)
+                        history = HistoryStore.load(context)
+                    },
+                    onClearAll = {
+                        HistoryStore.clear(context)
+                        history = emptyList()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/// Verlauf der bisherigen Transkriptionen.
+@Composable
+fun HistoryOverlay(
+    entries: List<HistoryEntry>,
+    onClose: () -> Unit,
+    onCopy: (String) -> Unit,
+    onDelete: (HistoryEntry) -> Unit,
+    onClearAll: () -> Unit,
+) {
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Verlauf (${entries.size})", style = MaterialTheme.typography.headlineSmall)
+                Row {
+                    if (entries.isNotEmpty()) {
+                        TextButton(onClick = onClearAll) { Text("Alle löschen") }
+                    }
+                    TextButton(onClick = onClose) { Text("Schließen") }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            if (entries.isEmpty()) {
+                Text("Noch keine Einträge.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(entries) { e ->
+                        ElevatedCard(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(e.dateText(), fontWeight = FontWeight.Bold)
+                                    Row {
+                                        TextButton(onClick = { onCopy(e.text) }) {
+                                            Icon(Icons.Filled.ContentCopy, null, Modifier.size(14.dp))
+                                        }
+                                        TextButton(onClick = { onDelete(e) }) {
+                                            Icon(Icons.Filled.Delete, null, Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                                Text(
+                                    e.text,
+                                    Modifier.verticalScroll(rememberScrollState()).heightIn(max = 160.dp)
+                                )
+                                Text(
+                                    listOfNotNull(
+                                        e.model.takeIf { it.isNotBlank() },
+                                        e.language.takeIf { it.isNotBlank() },
+                                        "%.1f s Audio".format(e.audioSeconds).takeIf { e.audioSeconds > 0 },
+                                    ).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

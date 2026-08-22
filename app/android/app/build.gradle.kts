@@ -15,7 +15,9 @@ android {
         versionCode = 1
         versionName = "1.0"
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            // Standard: nur Geräte-ABI (schlanke APK). Für Emulator/Universal:
+            // ./gradlew assembleDebug -Pabis=arm64-v8a,x86_64
+            abiFilters += (project.findProperty("abis") as String? ?: "arm64-v8a").split(",")
         }
     }
 

@@ -36,7 +36,7 @@ public static class WhisperCli
         if (SelectedModel == "" || !File.Exists(SelectedModel))
         { error = "Kein ggml-Modell gefunden (models/)"; return ""; }
 
-        var args = $"-m \"{SelectedModel}\" -f \"{audioPath}\" -nt -np";
+        var args = $"-m \"{SelectedModel}\" -f \"{audioPath}\" -nt -np -bs 1 -fa";
         if (language.Length > 0) args += $" -l {language}";
 
         var psi = new ProcessStartInfo

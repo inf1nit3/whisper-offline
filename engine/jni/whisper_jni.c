@@ -23,6 +23,7 @@ Java_dev_whisper_transcribe_WhisperBridge_loadModel(JNIEnv *env, jobject thiz, j
     const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
     struct whisper_context_params cparams = whisper_context_default_params();
     cparams.use_gpu = true;
+    cparams.flash_attn = true; // weniger Speicher-Verkehr, auf CPU leicht schneller
     g_ctx = whisper_init_from_file_with_params(path, cparams);
     (*env)->ReleaseStringUTFChars(env, jpath, path);
     if (g_ctx == NULL) {
@@ -65,11 +66,13 @@ Java_dev_whisper_transcribe_WhisperBridge_transcribe(JNIEnv *env, jobject thiz,
     const char *lang = (*env)->GetStringUTFChars(env, jlang, NULL);
     if (lang == NULL) lang = "de";
 
+    // Greedy statt Beam Search: ~5x schnellere Decoder-Phase, minimale
+    // Genauigkeitseinbuße. 4 Threads: auf big.LITTLE-SoCs sind die kleinen
+    // Effizienzkerne bremsend — die 4 schnellen Kerne arbeiten ungestört.
     struct whisper_full_params p =
-        whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
-    p.strategy = WHISPER_SAMPLING_BEAM_SEARCH;
-    p.n_threads = sysconf(_SC_NPROCESSORS_ONLN) > 8 ? 8 : (int) sysconf(_SC_NPROCESSORS_ONLN);
-    if (p.n_threads < 2) p.n_threads = 2;
+        whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    p.strategy = WHISPER_SAMPLING_GREEDY;
+    p.n_threads = 4;
     p.language = lang;
     p.translate = false;
     p.print_progress = false;

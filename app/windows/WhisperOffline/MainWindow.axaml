@@ -16,6 +16,7 @@
                     <ComboBoxItem Content="English" Tag="en" />
                 </ComboBox>
                 <Button Content="&#59256;  Modell wechseln" Click="OnOpenModelPicker" Margin="8,0,0,0" />
+                <Button Content="&#128218;  Verlauf" Click="OnOpenHistory" Margin="8,0,0,0" />
                 <TextBlock x:Name="ModelLabel" Text="" VerticalAlignment="Center"
                            Foreground="Gray" FontSize="12" Margin="8,0,0,0" TextWrapping="Wrap" />
             </StackPanel>
@@ -44,6 +45,21 @@
                 <Button Content="Leeren" Click="OnClearClick" />
             </StackPanel>
         </Grid>
+
+        <!-- Verlauf -->
+        <Border x:Name="HistoryPanel" IsVisible="False" Background="{DynamicResource SystemRegionBrush}">
+            <Grid RowDefinitions="Auto,*,Auto" Margin="24">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
+                    <TextBlock x:Name="HistoryTitle" Text="Verlauf" FontSize="22"
+                               FontWeight="Bold" VerticalAlignment="Center" />
+                    <Button Content="Alle löschen" Click="OnHistoryClear" />
+                    <Button Content="Schließen" Click="OnHistoryClose" />
+                </StackPanel>
+                <ScrollViewer Grid.Row="1">
+                    <StackPanel x:Name="HistoryList" Spacing="10" />
+                </ScrollViewer>
+            </Grid>
+        </Border>
 
         <!-- Modell-Auswahl (erster Start / Wechsel) -->
         <Border x:Name="PickerPanel" IsVisible="False" Background="{DynamicResource SystemRegionBrush}">

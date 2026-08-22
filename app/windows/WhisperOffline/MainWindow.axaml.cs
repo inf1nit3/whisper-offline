@@ -452,6 +452,89 @@ public partial class MainWindow : Window
         TranscriptBox.Text = TranscriptBox.Text?.Length > 0
             ? TranscriptBox.Text + "\n\n" + t
             : t;
+        HistoryStore.Add(new HistoryEntry(
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            t,
+            Path.GetFileName(WhisperCli.SelectedModel),
+            language,
+            0));
+    }
+
+    // ---------- Verlauf ----------
+
+    private void OnOpenHistory(object? sender, RoutedEventArgs e)
+    {
+        BuildHistoryList();
+        HistoryPanel.IsVisible = true;
+        MainPanel.IsVisible = false;
+        PickerPanel.IsVisible = false;
+    }
+
+    private void OnHistoryClose(object? sender, RoutedEventArgs e)
+    {
+        HistoryPanel.IsVisible = false;
+        MainPanel.IsVisible = true;
+    }
+
+    private void OnHistoryClear(object? sender, RoutedEventArgs e)
+    {
+        HistoryStore.Clear();
+        BuildHistoryList();
+    }
+
+    private void BuildHistoryList()
+    {
+        HistoryList.Children.Clear();
+        var entries = HistoryStore.Load();
+        HistoryTitle.Text = $"Verlauf ({entries.Count})";
+        if (entries.Count == 0)
+        {
+            HistoryList.Children.Add(new TextBlock { Text = "Noch keine Einträge.", Foreground = Brushes.Gray });
+            return;
+        }
+        foreach (var e in entries)
+        {
+            var border = new Border
+            {
+                BorderBrush = Brushes.LightGray,
+                BorderThickness = new Avalonia.Thickness(1),
+                CornerRadius = new Avalonia.CornerRadius(6),
+                Padding = new Avalonia.Thickness(12),
+                Child = BuildHistoryCard(e),
+            };
+            HistoryList.Children.Add(border);
+        }
+    }
+
+    private StackPanel BuildHistoryCard(HistoryEntry e)
+    {
+        var card = new StackPanel { Spacing = 4 };
+        var head = new StackPanel { Orientation = Orientation.Horizontal };
+        head.Children.Add(new TextBlock
+        {
+            Text = e.DateText, FontWeight = FontWeight.Bold,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        head.Children.Add(new TextBlock
+        {
+            Text = $"  {e.Model} · {e.Language}",
+            FontSize = 12, Foreground = Brushes.Gray,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        var spacer = new Control();
+        head.Children.Add(spacer);
+        var copy = new Button { Content = "Kopieren", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right };
+        copy.Click += async (_, _) =>
+        {
+            if (Clipboard != null) await Clipboard.SetTextAsync(e.Text);
+        };
+        head.Children.Add(copy);
+        var del = new Button { Content = "Löschen", FontSize = 12, Margin = new Avalonia.Thickness(6, 0, 0, 0) };
+        del.Click += (_, _) => { HistoryStore.Delete(e); BuildHistoryList(); };
+        head.Children.Add(del);
+        card.Children.Add(head);
+        card.Children.Add(new TextBlock { Text = e.Text, TextWrapping = TextWrapping.Wrap, MaxHeight = 120 });
+        return card;
     }
 
     private async void OnCopyClick(object? sender, RoutedEventArgs e)

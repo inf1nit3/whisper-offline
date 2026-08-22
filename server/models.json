@@ -1,6 +1,22 @@
 {
   "models": [
     {
+      "file": "ggml-tiny-q5_1.bin",
+      "label": "Whisper tiny — Blitz",
+      "tagline": "Sofort-Diktat, minimale Genauigkeit",
+      "size": 32152673,
+      "sha256": "818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7",
+      "pros": [
+        "Winzig (31 MB) und sehr schnell — Diktat nahezu in Echtzeit",
+        "Kaum Speicher- und Akkuverbrauch",
+        "Gut für kurze Sprachbefehle und Notizen"
+      ],
+      "cons": [
+        "Deutlich geringere Genauigkeit",
+        "Lange Sätze und Fachbegriffe oft falsch"
+      ]
+    },
+    {
       "file": "ggml-base.bin",
       "label": "Whisper base — Kompakt",
       "tagline": "Der Einstieg: klein und schnell",

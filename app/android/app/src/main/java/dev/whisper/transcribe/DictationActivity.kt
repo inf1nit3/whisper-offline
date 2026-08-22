@@ -109,6 +109,13 @@ fun DictationUi(modelPath: String) {
                 resultText = trimmed
                 state = DictationState.DONE
                 message = "In Zwischenablage kopiert (${secs.toFixed1(1)} s) — im Chat einfügen"
+                HistoryStore.add(context, HistoryEntry(
+                    timeMs = System.currentTimeMillis(),
+                    text = trimmed,
+                    model = modelPath.substringAfterLast('/'),
+                    language = "auto",
+                    audioSeconds = secs,
+                ))
                 Toast.makeText(context, "Text kopiert — jetzt im Chat einfügen", Toast.LENGTH_SHORT).show()
             }
         }

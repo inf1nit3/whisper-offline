@@ -11,6 +11,12 @@ set(WHISPER_SDL2 OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+# GPU-Beschleunigung über Vulkan (Android-GPUs); fällt automatisch auf CPU
+# zurück, wenn das Gerät kein Vulkan bereitstellt.
+set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+set(GGML_VULKAN_CHECK_RESULTS OFF CACHE BOOL "" FORCE)
+set(GGML_VULKAN_DEBUG OFF CACHE BOOL "" FORCE)
+set(GGML_VULKAN_VALIDATE OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../whisper.cpp whisper.cpp EXCLUDE_FROM_ALL)
 
