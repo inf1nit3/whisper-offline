@@ -111,7 +111,7 @@ public partial class MainWindow : Window
         {
             Icon = new WindowIcon(rtb),
             Menu = menu,
-            ToolTipText = "Whisper Offline — Strg+Alt+Leertaste: Diktat",
+            ToolTipText = "Scheisssewasser's Whisper — Strg+Alt+Leertaste: Diktat",
         };
         tray.Clicked += (_, _) => { Show(); Activate(); };
         TrayIcon.SetIcons(Application.Current, new TrayIcons { tray });

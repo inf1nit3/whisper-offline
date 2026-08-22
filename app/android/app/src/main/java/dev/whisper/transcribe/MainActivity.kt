@@ -166,7 +166,7 @@ fun App() {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Whisper Offline") }) }
+        topBar = { TopAppBar(title = { Text("Scheisssewasser's Whisper") }) }
     ) { padding ->
         Box(
             Modifier

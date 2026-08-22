@@ -1,4 +1,4 @@
-# Whisper Offline — Windows & Android
+# Scheisssewasser's Whisper — Windows & Android
 
 Lokale, vollständig offline laufende Sprachtranskription mit OpenAI Whisper (whisper.cpp),
 nach dem Vorbild von Whisper Bar unter macOS. Keine Cloud, keine Netzwerknutzung — Modell und
