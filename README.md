@@ -103,6 +103,27 @@ echo "sdk.dir=$HOME/Library/Android/sdk" > local.properties
   auf diesem Mac an einem Umgebungsproblem (Emulator bleibt headless im Zustand „offline"
   hängen, unabhängig von der App).
 
+## Modelle
+
+Gemessener Vergleich auf deutschem Testsatz („Umsatzsteuervormeldung" als Stolperstein, macOS/Metal):
+
+| Modell | Größe | Zeit | Qualität |
+|---|---|---|---|
+| ggml-base.bin | 141 MB | 0,5 s | mäßig (Fachwort falsch) |
+| ggml-small-q5_1.bin (**Standard**) | 181 MB | 1,4 s | deutlich besser |
+| ggml-large-v3-turbo-q5_0.bin | 547 MB | 2,4 s | exakt, nahe large-v3 |
+
+Beide Apps haben eine Modellauswahl. Gebündelt sind base + small (small ist Standard).
+
+**Turbo nachladen:**
+
+- Windows: `ggml-large-v3-turbo-q5_0.bin` von
+  `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin`
+  in den `models/`-Ordner legen — erscheint automatisch im Dropdown.
+- Android: per `adb push ggml-large-v3-turbo-q5_0.bin /data/local/tmp/` und
+  `adb shell run-as dev.whisper.transcribe cp /data/local/tmp/ggml-large-v3-turbo-q5_0.bin files/models/`
+  (run-as funktioniert bei Debug-Builds), danach in der App im Modell-Menü wählbar.
+
 ## Lizenzhinweise
 
 - Whisper-Modelle: MIT (OpenAI)

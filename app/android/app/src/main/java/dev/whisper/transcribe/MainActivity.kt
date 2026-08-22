@@ -36,6 +36,12 @@ class MainActivity : ComponentActivity() {
 
 private val LANGUAGES = listOf("auto" to "Automatisch", "de" to "Deutsch", "en" to "English")
 
+// Gebündelte Modelle in assets/models; Anzeige-Name → Dateiname
+private val BUNDLED_MODELS = linkedMapOf(
+    "Whisper small (empfohlen)" to "ggml-small-q5_1.bin",
+    "Whisper base (schnell)" to "ggml-base.bin",
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App() {
@@ -52,6 +58,9 @@ fun App() {
     var elapsedS by remember { mutableStateOf(0f) }
     var language by remember { mutableStateOf("auto") }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var selectedModel by remember { mutableStateOf(BUNDLED_MODELS.keys.first()) }
+    var extraModels by remember { mutableStateOf(listOf<String>()) }
+    var loadingModel by remember { mutableStateOf(true) }
 
     val recorder = remember { AudioRecorder() }
 
@@ -95,20 +104,41 @@ fun App() {
         }
     }
 
-    // Modell beim Start aus den Assets entpacken und laden
+    // Modell laden; gebündelte Modelle werden aus den Assets entpackt,
+    // zusätzlich vorhandene Dateien in filesDir/models (z. B. per adb push
+    // nachgeladenes Turbo-Modell) werden im Menü mit angeboten.
+    fun loadModelFile(displayName: String) {
+        val fileName = BUNDLED_MODELS[displayName] ?: displayName
+        loadingModel = true
+        modelState = "Lade $fileName…"
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                val modelFile = File(context.filesDir, "models/$fileName")
+                if (!modelFile.exists() || modelFile.length() == 0L) {
+                    val bundled = BUNDLED_MODELS.containsValue(fileName)
+                    if (bundled) {
+                        modelFile.parentFile?.mkdirs()
+                        context.assets.open("models/$fileName").use { input ->
+                            modelFile.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    }
+                }
+                val ok = modelFile.exists() && WhisperBridge.loadModel(modelFile.absolutePath)
+                modelReady = ok
+                modelState = if (ok) "$fileName bereit (offline)" else "Modellfehler"
+            }
+            loadingModel = false
+        }
+    }
+
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            val modelFile = File(context.filesDir, "models/ggml-base.bin")
-            if (!modelFile.exists() || modelFile.length() == 0L) {
-                modelFile.parentFile?.mkdirs()
-                context.assets.open("models/ggml-base.bin").use { input ->
-                    modelFile.outputStream().use { output -> input.copyTo(output) }
-                }
-            }
-            val ok = WhisperBridge.loadModel(modelFile.absolutePath)
-            modelReady = ok
-            modelState = if (ok) "whisper base bereit (offline)" else "Modellfehler"
+            File(context.filesDir, "models").listFiles()
+                ?.map { it.name }
+                ?.filter { it.endsWith(".bin") && !BUNDLED_MODELS.containsValue(it) }
+                ?.let { extraModels = it }
         }
+        loadModelFile(selectedModel)
     }
 
     Scaffold(
@@ -125,17 +155,35 @@ fun App() {
             Spacer(Modifier.height(12.dp))
 
             var langExpanded by remember { mutableStateOf(false) }
-            Box {
-                OutlinedButton(onClick = { langExpanded = true }) {
-                    Icon(Icons.Filled.Language, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Sprache: " + LANGUAGES.first { it.first == language }.second)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box {
+                    OutlinedButton(onClick = { langExpanded = true }) {
+                        Icon(Icons.Filled.Language, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(LANGUAGES.first { it.first == language }.second)
+                    }
+                    DropdownMenu(expanded = langExpanded, onDismissRequest = { langExpanded = false }) {
+                        LANGUAGES.forEach { (code, label) ->
+                            DropdownMenuItem(text = { Text(label) }, onClick = {
+                                language = code; langExpanded = false
+                            })
+                        }
+                    }
                 }
-                DropdownMenu(expanded = langExpanded, onDismissRequest = { langExpanded = false }) {
-                    LANGUAGES.forEach { (code, label) ->
-                        DropdownMenuItem(text = { Text(label) }, onClick = {
-                            language = code; langExpanded = false
-                        })
+                var modelExpanded by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { modelExpanded = true }, enabled = !loadingModel) {
+                        Icon(Icons.Filled.Tune, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(selectedModel)
+                    }
+                    DropdownMenu(expanded = modelExpanded, onDismissRequest = { modelExpanded = false }) {
+                        (BUNDLED_MODELS.keys + extraModels).forEach { name ->
+                            DropdownMenuItem(text = { Text(name) }, onClick = {
+                                selectedModel = name; modelExpanded = false
+                                loadModelFile(name)
+                            })
+                        }
                     }
                 }
             }
@@ -171,7 +219,7 @@ fun App() {
                         }
                     }
                 },
-                enabled = modelReady && !busy,
+                enabled = modelReady && !busy && !loadingModel,
                 colors = if (recording) ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error
                 ) else ButtonDefaults.buttonColors(),
@@ -190,7 +238,7 @@ fun App() {
 
             OutlinedButton(
                 onClick = { filePicker.launch(arrayOf("audio/*", "video/*")) },
-                enabled = modelReady && !busy && !recording
+                enabled = modelReady && !busy && !recording && !loadingModel
             ) {
                 Icon(Icons.Filled.Description, null)
                 Spacer(Modifier.width(6.dp))

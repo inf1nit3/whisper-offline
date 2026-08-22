@@ -18,8 +18,9 @@ cd "$ROOT/app/windows/WhisperOffline"
 cp "$ROOT/dist/windows/whisper-cli.exe" "$OUT/engine/"
 cp "$ROOT"/dist/windows/*.dll "$OUT/engine/"
 
-# 3. Modell
+# 3. Modelle (base + small; weitere wie large-v3-turbo-q5_0 einfach dazulegen)
 cp "$ROOT/models/ggml-base.bin" "$OUT/models/"
+cp "$ROOT/models/ggml-small-q5_1.bin" "$OUT/models/"
 
 # 4. Zip
 cd "$ROOT/dist"

@@ -10,17 +10,33 @@ public static class WhisperCli
     public static string BaseDir { get; } = AppContext.BaseDirectory;
     public static string EngineDir => Path.Combine(BaseDir, "engine");
     public static string EnginePath => Path.Combine(EngineDir, "whisper-cli.exe");
-    public static string ModelPath => Path.Combine(BaseDir, "models", "ggml-base.bin");
+    public static string ModelsDir => Path.Combine(BaseDir, "models");
+
+    /// Aktuell gewähltes Modell; Standard: small (bessere Qualität), sonst base.
+    public static string SelectedModel { get; set; } = "";
+
+    public static List<string> AvailableModels()
+    {
+        if (!Directory.Exists(ModelsDir)) return new();
+        var models = Directory.GetFiles(ModelsDir, "ggml-*.bin")
+                               .OrderByDescending(m => m.Contains("small"))
+                               .ThenBy(m => m)
+                               .ToList();
+        if (models.Count > 0 && SelectedModel == "")
+            SelectedModel = models[0];
+        return models;
+    }
+
     public static bool EnginePathExists => File.Exists(EnginePath);
-    public static bool ModelPathExists => File.Exists(ModelPath);
 
     public static string Transcribe(string audioPath, string language, out string error)
     {
         error = "";
         if (!EnginePathExists) { error = "whisper-cli.exe nicht gefunden (engine/)"; return ""; }
-        if (!ModelPathExists) { error = "ggml-base.bin nicht gefunden (models/)"; return ""; }
+        if (SelectedModel == "" || !File.Exists(SelectedModel))
+        { error = "Kein ggml-Modell gefunden (models/)"; return ""; }
 
-        var args = $"-m \"{ModelPath}\" -f \"{audioPath}\" -nt -np";
+        var args = $"-m \"{SelectedModel}\" -f \"{audioPath}\" -nt -np";
         if (language.Length > 0) args += $" -l {language}";
 
         var psi = new ProcessStartInfo

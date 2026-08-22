@@ -20,8 +20,26 @@ public partial class MainWindow : Window
         {
             language = (LanguageBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "auto";
         };
-        ModelLabel.Text = $"Modell: {Path.GetFileName(WhisperCli.ModelPath)} " +
-                          $"({(WhisperCli.ModelPathExists ? "gefunden" : "FEHLT!")})";
+        var models = WhisperCli.AvailableModels();
+        foreach (var m in models) ModelBox.Items.Add(Path.GetFileName(m));
+        if (models.Count > 0)
+        {
+            ModelBox.SelectedIndex = 0;
+            ModelLabel.Text = $"({models.Count} Modell(e) in models/ — weitere .bin einfach dazulegen)";
+        }
+        else
+        {
+            ModelLabel.Text = "Kein Modell in models/ gefunden!";
+        }
+    }
+
+    private void OnModelSelected(object? sender, SelectionChangedEventArgs e)
+    {
+        if (ModelBox.SelectedItem is string name)
+        {
+            var path = Path.Combine(WhisperCli.ModelsDir, name);
+            if (File.Exists(path)) WhisperCli.SelectedModel = path;
+        }
     }
 
     private string Lang => language == "auto" ? "" : language;
