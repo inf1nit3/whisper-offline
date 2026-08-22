@@ -1,43 +1,62 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="clr-namespace:WhisperOffline"
         x:Class="WhisperOffline.MainWindow"
         Title="Whisper Offline"
-        Width="640" Height="560"
+        Width="680" Height="600"
         WindowStartupLocation="CenterScreen">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="16">
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
-            <TextBlock Text="Sprache:" VerticalAlignment="Center" />
-            <ComboBox x:Name="LanguageBox" SelectedIndex="0" Width="130">
-                <ComboBoxItem Content="Automatisch" Tag="auto" />
-                <ComboBoxItem Content="Deutsch" Tag="de" />
-                <ComboBoxItem Content="English" Tag="en" />
-            </ComboBox>
-            <TextBlock Text="Modell:" VerticalAlignment="Center" Margin="16,0,0,0" />
-            <ComboBox x:Name="ModelBox" MinWidth="220" SelectionChanged="OnModelSelected" />
-            <TextBlock x:Name="ModelLabel" Text="" VerticalAlignment="Center"
-                       Foreground="Gray" FontSize="12" Margin="8,0,0,0" />
-        </StackPanel>
+    <Grid>
+        <!-- Hauptansicht -->
+        <Grid x:Name="MainPanel" RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="16">
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="Sprache:" VerticalAlignment="Center" />
+                <ComboBox x:Name="LanguageBox" SelectedIndex="0" Width="130">
+                    <ComboBoxItem Content="Automatisch" Tag="auto" />
+                    <ComboBoxItem Content="Deutsch" Tag="de" />
+                    <ComboBoxItem Content="English" Tag="en" />
+                </ComboBox>
+                <Button Content="&#59256;  Modell wechseln" Click="OnOpenModelPicker" Margin="8,0,0,0" />
+                <TextBlock x:Name="ModelLabel" Text="" VerticalAlignment="Center"
+                           Foreground="Gray" FontSize="12" Margin="8,0,0,0" TextWrapping="Wrap" />
+            </StackPanel>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12" Margin="0,16,0,0">
-            <Button x:Name="RecordButton" Content="&#127908;  Aufnahme starten" MinWidth="170"
-                    Click="OnRecordClick" />
-            <Button x:Name="FileButton" Content="&#128196;  Datei transkribieren…" MinWidth="180"
-                    Click="OnFileClick" />
-        </StackPanel>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12" Margin="0,16,0,0">
+                <Button x:Name="RecordButton" Content="&#127908;  Aufnahme starten" MinWidth="170"
+                        Click="OnRecordClick" />
+                <Button x:Name="FileButton" Content="&#128196;  Datei transkribieren…" MinWidth="180"
+                        Click="OnFileClick" />
+            </StackPanel>
 
-        <TextBlock Grid.Row="2" x:Name="StatusLabel" Text="" Margin="0,12,0,0"
-                   Foreground="Gray" TextWrapping="Wrap" />
+            <TextBlock Grid.Row="2" x:Name="StatusLabel" Text="" Margin="0,12,0,0"
+                       Foreground="Gray" TextWrapping="Wrap" />
 
-        <TextBox Grid.Row="3" x:Name="TranscriptBox" Margin="0,12,0,0"
-                 AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="False"
-                 Watermark="Hier erscheint die Transkription…" />
+            <TextBox Grid.Row="3" x:Name="TranscriptBox" Margin="0,12,0,0"
+                     AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="False"
+                     Watermark="Hier erscheint die Transkription…" />
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0"
-                    HorizontalAlignment="Right">
-            <Button Content="Kopieren" Click="OnCopyClick" />
-            <Button Content="Leeren" Click="OnClearClick" />
-        </StackPanel>
+            <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0"
+                        HorizontalAlignment="Right">
+                <Button Content="Kopieren" Click="OnCopyClick" />
+                <Button Content="Leeren" Click="OnClearClick" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Modell-Auswahl (erster Start / Wechsel) -->
+        <Border x:Name="PickerPanel" IsVisible="False" Background="{DynamicResource SystemRegionBrush}">
+            <Grid RowDefinitions="Auto,*,Auto" Margin="24">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
+                    <TextBlock Text="Modell wählen" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
+                    <TextBlock Text="Wird einmalig von deinem Server geladen" VerticalAlignment="Center"
+                               Foreground="Gray" />
+                    <Button x:Name="PickerCloseButton" Content="Schließen" HorizontalAlignment="Right"
+                            Click="OnClosePicker" />
+                </StackPanel>
+                <ScrollViewer Grid.Row="1">
+                    <StackPanel x:Name="PickerList" Spacing="12" />
+                </ScrollViewer>
+                <TextBlock Grid.Row="2" x:Name="PickerError" Text="" Foreground="Red"
+                           TextWrapping="Wrap" Margin="0,12,0,0" />
+            </Grid>
+        </Border>
     </Grid>
 </Window>

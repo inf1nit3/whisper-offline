@@ -41,13 +41,15 @@ startet die EXE auf Windows-Rechnern ohne MinGW nicht.
 
 ## Fertige Pakete
 
-- **Windows:** `dist/WhisperOffline-windows-x64.zip` — entpacken, `WhisperOffline.exe` starten.
-  Enthält GUI, Engine und Modell. Keine Installation nötig.
-- **Android:** `app/android/app/build/outputs/apk/debug/app-debug.apk` (184 MB, Debug-Signatur;
-  für Play-Vertrieb `./gradlew assembleRelease` mit eigenem Keystore).
+- **Windows:** `dist/WhisperOffline-windows-x64.zip` (57 MB) — entpacken, `WhisperOffline.exe`
+  starten, Modell einmalig vom eigenen Server laden. Keine Installation nötig.
+- **Android:** `dist/WhisperOffline-android-debug.apk` (56 MB) — installieren, beim ersten
+  Start Modell wählen und laden (für Play-Vertrieb `./gradlew assembleRelease` mit eigenem Keystore).
 
 ## Features (beide Apps)
 
+- Erster Start: Modellauswahl mit Vor-/Nachteilen, Download vom eigenen VPS mit Fortschritt
+  und SHA256-Prüfung; später umschaltbar
 - Mikrofonaufnahme → Transkription (16 kHz Mono)
 - Datei-Transkription (Windows: wav/mp3/flac/ogg/m4a/mp4…, Android: alles von MediaCodec Dekodierbare)
 - Sprachauswahl: Automatisch / Deutsch / English
@@ -105,24 +107,27 @@ echo "sdk.dir=$HOME/Library/Android/sdk" > local.properties
 
 ## Modelle
 
-Gemessener Vergleich auf deutschem Testsatz („Umsatzsteuervormeldung" als Stolperstein, macOS/Metal):
+Die Modelle sind **nicht** mehr in den Apps gebündelt. Beim ersten Start holt die App
+ein Manifest vom eigenen VPS (`server/models.json`), zeigt jede Modellkarte mit
+Vor- und Nachteilen, Größe und Prüfsumme, lädt die Auswahl einmalig herunter
+(SHA256-verifiziert, mit Fortschrittsanzeige) und aktiviert sie. Später jederzeit
+über „Modell wechseln" umschaltbar. Die Auswahl wird persistiert (Android:
+SharedPreferences; Windows: `settings.json` neben der EXE).
+
+Messwerte (deutscher Testsatz, „Umsatzsteuervormeldung" als Stolperstein, macOS/Metal):
 
 | Modell | Größe | Zeit | Qualität |
 |---|---|---|---|
 | ggml-base.bin | 141 MB | 0,5 s | mäßig (Fachwort falsch) |
-| ggml-small-q5_1.bin (**Standard**) | 181 MB | 1,4 s | deutlich besser |
+| ggml-small-q5_1.bin (**empfohlen**) | 181 MB | 1,4 s | deutlich besser |
 | ggml-large-v3-turbo-q5_0.bin | 547 MB | 2,4 s | exakt, nahe large-v3 |
 
-Beide Apps haben eine Modellauswahl. Gebündelt sind base + small (small ist Standard).
+### Backend
 
-**Turbo nachladen:**
-
-- Windows: `ggml-large-v3-turbo-q5_0.bin` von
-  `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin`
-  in den `models/`-Ordner legen — erscheint automatisch im Dropdown.
-- Android: per `adb push ggml-large-v3-turbo-q5_0.bin /data/local/tmp/` und
-  `adb shell run-as dev.whisper.transcribe cp /data/local/tmp/ggml-large-v3-turbo-q5_0.bin files/models/`
-  (run-as funktioniert bei Debug-Builds), danach in der App im Modell-Menü wählbar.
+Statisches Hosting auf dem eigenen VPS (nginx auf Port 8901):
+`http://<vps>:8901/models.json` — siehe `server/README-server.md`.
+URL in beiden Apps an einer Stelle konfiguriert:
+Android `ModelConfig.kt`, Windows `ModelConfig.cs`.
 
 ## Lizenzhinweise
 

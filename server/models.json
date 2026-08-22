@@ -1,0 +1,53 @@
+{
+  "models": [
+    {
+      "file": "ggml-base.bin",
+      "label": "Whisper base — Kompakt",
+      "tagline": "Der Einstieg: klein und schnell",
+      "size": 147951465,
+      "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+      "pros": [
+        "Kleinste Größe (141 MB Download)",
+        "Schnellste Transkription, auch auf älteren Geräten",
+        "Niedriger Speicher- und RAM-Bedarf"
+      ],
+      "cons": [
+        "Mittelmäßige Genauigkeit",
+        "Fachbegriffe und Eigennamen oft falsch"
+      ]
+    },
+    {
+      "file": "ggml-small-q5_1.bin",
+      "label": "Whisper small — Empfohlen",
+      "tagline": "Der beste Kompromiss aus Größe und Genauigkeit",
+      "size": 190085487,
+      "sha256": "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb",
+      "pros": [
+        "Deutlich genauer als base (quantisiert, kaum Verlust)",
+        "Nur geringfügig größer (181 MB)",
+        "Gute Groß-/Kleinschreibung und Zeichensetzung"
+      ],
+      "cons": [
+        "Etwa 2–3× langsamere Transkription als base",
+        "Sehr lange Fachwörter mitunter mit Bindestrich"
+      ]
+    },
+    {
+      "file": "ggml-large-v3-turbo-q5_0.bin",
+      "label": "Whisper large-v3-turbo — Maximum",
+      "tagline": "Höchste Genauigkeit, nahe am großen large-v3",
+      "size": 574041195,
+      "sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+      "pros": [
+        "Beste Genauigkeit, Fachbegriffe exakt",
+        "Fast large-v3-Niveau bei turbo-schneller Dekodierung",
+        "Flüssige Zeichensetzung und Satzstruktur"
+      ],
+      "cons": [
+        "Großer Download (547 MB) und hoher RAM-Bedarf",
+        "Auf älteren Geräten deutlich langsam",
+        "Braucht ~2 GB freien Speicher"
+      ]
+    }
+  ]
+}
