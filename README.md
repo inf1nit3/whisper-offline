@@ -95,10 +95,12 @@ echo "sdk.dir=$HOME/Library/Android/sdk" > local.properties
 ## Tests
 
 - macOS-Referenz: `engine/whisper-macos` transkribiert Testaudio korrekt (0,3 s, Metal).
-- Android: `tools/test-android.sh` — bootet den Emulator, installiert das APK und prüft
-  im Logcat (`whisper-jni`), ob die JNI-Bibliothek das Modell lädt.
-- Windows: Engine wurde per MinGW kreuzkompiliert (identischer Quellcode wie die getesteten
-  macOS/Android-Builds); ein Laufzeit-Test auf Windows selbst steht noch aus.
+- Windows: Engine per MinGW kreuzkompiliert; Import-Tabelle geprüft — alle benötigten DLLs
+  (inkl. MinGW-Runtime) liegen im Paket. Ein Laufzeit-Test auf Windows selbst steht noch aus.
+- Android: APK baut sauber; der Emulator-Verifikationslauf (`tools/test-android.sh`) scheitert
+  auf diesem Mac an einem Umgebungsproblem (Emulator bleibt headless im Zustand „offline"
+  hängen, unabhängig von der App). Stattdessen: `dist/WhisperOffline-android-debug.apk` per
+  `adb install` auf einem echten Gerät testen (Mikrofon erlauben → Aufnahme → Transkript).
 
 ## Lizenzhinweise
 
