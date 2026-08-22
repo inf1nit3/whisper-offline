@@ -1,0 +1,19 @@
+# Große Binärdateien und Build-Artefakte
+models/*.bin
+dist/WhisperOffline-windows-x64*
+engine/whisper.cpp/
+engine/jni/build-*/
+engine/whisper-macos
+app/android/app/build/
+app/android/app/src/main/assets/models/
+app/android/app/src/main/jniLibs/*/libwhisper_jni.so
+app/android/.gradle/
+app/android/build/
+app/android/local.properties
+app/windows/WhisperOffline/bin/
+app/windows/WhisperOffline/obj/
+tools/gradle-*/
+tools/dotnet/
+*.apk
+*.zip
+.DS_Store
