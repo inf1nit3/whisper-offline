@@ -325,8 +325,8 @@ Zwei Fallstricke, die beim Einbau aufgeschlagen sind:
 
 ### Backend
 
-Statisches Hosting auf dem eigenen VPS (nginx auf Port 8901):
-`http://<vps>:8901/models.json` — siehe `server/README-server.md`.
+Statisches Hosting auf dem eigenen VPS hinter TLS (Let.s Encrypt):
+`https://whisper.scheisssewasser.xyz/models.json` — siehe `server/README-server.md`.
 URL in beiden Apps an einer Stelle konfiguriert:
 Android `ModelConfig.kt`, Windows `ModelConfig.cs`.
 
