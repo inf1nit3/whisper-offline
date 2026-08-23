@@ -110,7 +110,7 @@ fun DictationUi(modelPath: String) {
             }
             val t0 = System.currentTimeMillis()
             val text = withContext(Dispatchers.Default) {
-                WhisperBridge.transcribe(samples, Settings.language(context), Settings.shortCtx(context))
+                WhisperBridge.transcribe(samples, Settings.language(context), false)
             }
             val secs = (System.currentTimeMillis() - t0) / 1000f
             val trimmed = text.trim()

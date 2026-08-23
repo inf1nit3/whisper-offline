@@ -55,11 +55,6 @@ object Settings {
     /// rechnen. Standard aus: auf einem X300 Pro brachte 768 statt 1500 keine
     /// messbare Zeitersparnis (beide Läufe 5,2 s), und whisper.h führt die Option
     /// als experimentell mit möglichem Qualitätsverlust.
-    fun shortCtx(context: Context): Boolean = prefs(context).getBoolean(KEY_SHORT_CTX, false)
-
-    fun setShortCtx(context: Context, value: Boolean) {
-        prefs(context).edit().putBoolean(KEY_SHORT_CTX, value).apply()
-    }
 
     /// Standard "de" statt "auto": bei "auto" führt whisper.cpp vor der eigentlichen
     /// Transkription einen kompletten zusätzlichen Encoder-Durchlauf zur

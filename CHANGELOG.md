@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.6
+
+- Android: Schalter „Kurzes Audio beschleunigen" entfernt — Messung zeigte
+  korrumpierte, sich wiederholende Transkripte (Whisper erwartet das volle
+  30-Sekunden-Fenster)
+- Modelle lassen sich in der Auswahl jetzt direkt löschen (Papierkorb-Button),
+  mit Bestätigungsdialog — befreit Speicher von nicht mehr genutzten Modellen
+
 ## v1.5
 
 - Test- und Messanzeigen aus der Oberfläche entfernt:

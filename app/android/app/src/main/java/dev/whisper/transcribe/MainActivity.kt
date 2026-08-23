@@ -71,7 +71,6 @@ fun App() {
     var changelogText by remember { mutableStateOf("") }
     var useGpu by remember { mutableStateOf(Settings.useGpu(context)) }
     val gpuAvailable = remember { WhisperBridge.hasGpuBackend() }
-    var shortCtx by remember { mutableStateOf(Settings.shortCtx(context)) }
     // Parakeet ist mehrsprachig und hat kein festes Encoder-Fenster — beide
     // Bedienelemente wären dort wirkungslos und werden ausgeblendet.
     var isParakeet by remember { mutableStateOf(false) }
@@ -249,7 +248,7 @@ fun App() {
                     statusMessage = "Transkribiere…"
                     val t0 = System.currentTimeMillis()
                     val text = withContext(Dispatchers.Default) {
-                        WhisperBridge.transcribe(samples, language, shortCtx)
+                        WhisperBridge.transcribe(samples, language, false)
                     }
                     transcript = text.trim()
                     if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
@@ -414,26 +413,6 @@ fun App() {
                     }
                 }
 
-                // Kürzt das 30-s-Encoder-Fenster auf die tatsächliche Audiolänge.
-                // Bei kurzem Diktat der größte Zeitfresser — laut whisper.h aber
-                // experimentell, deshalb abschaltbar zum Qualitätsvergleich.
-                if (!isParakeet) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("Kurzes Audio beschleunigen", style = MaterialTheme.typography.bodySmall)
-                        Switch(
-                            checked = shortCtx,
-                            enabled = !busy && !recording,
-                            onCheckedChange = { on ->
-                                shortCtx = on
-                                Settings.setShortCtx(context, on)
-                            }
-                        )
-                    }
-                }
-
                 // Vergleichsschalter CPU gegen GPU — nur sichtbar, wenn die
                 // Engine überhaupt mit einem GPU-Backend gebaut wurde.
                 if (gpuAvailable) {
@@ -476,7 +455,7 @@ fun App() {
                             scope.launch {
                                 val t0 = System.currentTimeMillis()
                                 val text = withContext(Dispatchers.Default) {
-                                    WhisperBridge.transcribe(samples, language, shortCtx)
+                                    WhisperBridge.transcribe(samples, language, false)
                                 }
                                 transcript = text.trim()
                                 if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
@@ -577,6 +556,25 @@ fun App() {
                 )
             }
 
+            // Löschen-Dialog für heruntergeladene Modelle
+            var confirmDeleteModel by remember { mutableStateOf<String?>(null) }
+            confirmDeleteModel?.let { fileName ->
+                AlertDialog(
+                    onDismissRequest = { confirmDeleteModel = null },
+                    title = { Text("Modell löschen?") },
+                    text = { Text("\"$fileName\" wird vom Gerät entfernt. Dein aktives Modell bleibt davon unberührt, falls es ein anderes ist.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            File(ModelRegistry.modelsDir(context), fileName).delete()
+                            confirmDeleteModel = null
+                        }) { Text("Löschen", color = MaterialTheme.colorScheme.error) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { confirmDeleteModel = null }) { Text("Abbrechen") }
+                    }
+                )
+            }
+
             if (pickerVisible) {
                 ModelPickerOverlay(
                     manifest = manifest,
@@ -589,6 +587,7 @@ fun App() {
                     onRetry = { refreshManifest() },
                     onDownload = { startDownload(it) },
                     onActivate = { loadModel(it); pickerVisible = false },
+                    onDelete = { confirmDeleteModel = it },
                     onDismissIfModelReady = { if (modelReady) pickerVisible = false },
                 )
             }
@@ -702,6 +701,7 @@ fun ModelPickerOverlay(
     onRetry: () -> Unit,
     onDownload: (ModelInfo) -> Unit,
     onActivate: (String) -> Unit,
+    onDelete: (String) -> Unit,
     onDismissIfModelReady: () -> Unit,
 ) {
     Surface(
@@ -794,8 +794,17 @@ fun ModelPickerOverlay(
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
-                                    isLocal -> Button(onClick = { onActivate(info.file) }) {
-                                        Text("Aktivieren (bereits geladen)")
+                                    isLocal -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(onClick = { onActivate(info.file) }) {
+                                            Text("Aktivieren (bereits geladen)")
+                                        }
+                                        OutlinedButton(onClick = { onDelete(info.file) }) {
+                                            Icon(
+                                                Icons.Filled.Delete, "Löschen",
+                                                Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
                                     }
                                     else -> Button(
                                         onClick = { onDownload(info) },
@@ -811,6 +820,14 @@ fun ModelPickerOverlay(
                     }
 
                     // Modelle, die lokal liegen aber nicht im Manifest stehen
+                    // (z. B. früher heruntergeladene, inzwischen entfernte)
+                    if (localFiles.any { f -> manifest.none { it.file == f } }) {
+                        Text(
+                            "Weitere lokale Modelle",
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(top = 10.dp)
+                        )
+                    }
                     localFiles.filter { f -> manifest.none { it.file == f } }.forEach { f ->
                         ElevatedCard(
                             Modifier
@@ -825,7 +842,16 @@ fun ModelPickerOverlay(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(f)
-                                Button(onClick = { onActivate(f) }) { Text("Aktivieren") }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { onActivate(f) }) { Text("Aktivieren") }
+                                    OutlinedButton(onClick = { onDelete(f) }) {
+                                        Icon(
+                                            Icons.Filled.Delete, "Löschen",
+                                            Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
