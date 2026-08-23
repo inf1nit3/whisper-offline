@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.4
+
+- Teilen-Button für das Transkript:
+  - Android: natives Teilen-Menü des Systems (WhatsApp, Signal, Mail, …)
+  - Windows: Teilen-Menü mit WhatsApp (vorbefüllter Text), E-Mail-Entwurf
+    und Zwischenablage
+
 ## v1.3
 
 - Einführung beim ersten App-Start (4 Seiten): Was kann die App, von wem sie

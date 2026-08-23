@@ -575,10 +575,28 @@ fun App() {
                 ) {
                     Text("Transkript", style = MaterialTheme.typography.titleMedium)
                     if (transcript.isNotEmpty()) {
-                        TextButton(onClick = { clipboard.setText(AnnotatedString(transcript)) }) {
-                            Icon(Icons.Filled.ContentCopy, null, Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Kopieren")
+                        Row {
+                            TextButton(onClick = {
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        android.content.Intent.EXTRA_TEXT,
+                                        "🎙️ (transkribiert mit Scheisssewasser's Whisper)\n\n$transcript"
+                                    )
+                                }
+                                context.startActivity(
+                                    android.content.Intent.createChooser(send, "Transkript teilen")
+                                )
+                            }) {
+                                Icon(Icons.Filled.Share, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Teilen")
+                            }
+                            TextButton(onClick = { clipboard.setText(AnnotatedString(transcript)) }) {
+                                Icon(Icons.Filled.ContentCopy, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Kopieren")
+                            }
                         }
                     }
                 }

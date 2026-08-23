@@ -897,4 +897,34 @@ public partial class MainWindow : Window
     }
 
     private void OnClearClick(object? sender, RoutedEventArgs e) => TranscriptBox.Text = "";
+
+    // ---------- Teilen ----------
+
+    private void OnShareClick(object? sender, RoutedEventArgs e) { } // öffnet nur das Flyout
+
+    /// WhatsApp mit vorbefülltem Text (wa.me-Link öffnet die Desktop-App).
+    private void OnShareWhatsApp(object? sender, RoutedEventArgs e)
+    {
+        var text = TranscriptBox.Text;
+        if (string.IsNullOrEmpty(text)) return;
+        OpenExternal("https://wa.me/?text=" + Uri.EscapeDataString(ShareText(text)));
+    }
+
+    /// Standard-Mail-Programm mit Transkript als Entwurf.
+    private void OnShareMail(object? sender, RoutedEventArgs e)
+    {
+        var text = TranscriptBox.Text;
+        if (string.IsNullOrEmpty(text)) return;
+        OpenExternal(
+            $"mailto:?subject={Uri.EscapeDataString("Transkript – Scheisssewasser's Whisper")}" +
+            $"&body={Uri.EscapeDataString(ShareText(text))}");
+    }
+
+    /// URLs/MAILTO haben praktische Längenlimits — den Rest gibt es über
+    /// die Zwischenablage (Menüpunkt darunter).
+    private static string ShareText(string s) =>
+        s.Length > 1800 ? s[..1800] + " …" : s;
+
+    private static void OpenExternal(string url) =>
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
 }
