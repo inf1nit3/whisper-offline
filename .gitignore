@@ -26,3 +26,12 @@ tools/spirv-install/
 tools/vk-install/
 tools/spirv-build/
 tools/vkh-build/
+
+# Build-/Install-Artefakte
+dist/
+engine/shim/build*/
+engine/shim/build-*/
+tools/vk-install/
+tools/spirv-install/
+tools/spirv-build/
+tools/vkh-build/
