@@ -15,8 +15,8 @@ android {
         // Nur mit -DGGML_VULKAN=ON muss hier 28 stehen (vkGetPhysicalDeviceFeatures2).
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.6.1"
+        versionCode = 1
+        versionName = "1.0"
         ndk {
             // Standard: nur Geräte-ABI (schlanke APK). Für Emulator/Universal:
             // ./gradlew assembleDebug -Pabis=arm64-v8a,x86_64

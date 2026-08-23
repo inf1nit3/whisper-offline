@@ -1,9 +1,9 @@
 # Scheisssewasser's Whisper — Windows & Android
 
-![Version](https://img.shields.io/badge/version-0.6.1-blue)
-[![Release](https://img.shields.io/badge/release-v0.6.1-brightgreen)](https://github.com/inf1nit3/whisper-offline/releases/tag/v0.6.1)
+![Version](https://img.shields.io/badge/version-1.0-blue)
+[![Release](https://img.shields.io/badge/release-v1.0-brightgreen)](https://github.com/inf1nit3/whisper-offline/releases/tag/v1.0)
 
-**Aktuelle Version: 0.6.1** — [Release-Notes](https://github.com/inf1nit3/whisper-offline/releases/tag/v0.6.1)
+**Aktuelle Version: 1.0** — [Release-Notes](https://github.com/inf1nit3/whisper-offline/releases/tag/v1.0)
 
 Lokale, vollständig offline laufende Sprachtranskription mit OpenAI Whisper (whisper.cpp),
 nach dem Vorbild von Whisper Bar unter macOS. Keine Cloud, keine Netzwerknutzung — Modell und
