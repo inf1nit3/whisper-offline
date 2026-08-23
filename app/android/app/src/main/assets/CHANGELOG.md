@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.8
+
+- „Datei transkribieren" prüft jetzt vorab den Dateityp: PDFs, Bilder und
+  Dokumente werden mit verständlicher Meldung abgelehnt statt mit dem
+  technischen Fehler „Failed to instantiate extractor"
+
 ## v1.7
 
 - Fehlerbehebung „Modellfehler" beim Start: Die App speichert ein Modell nur

@@ -253,6 +253,14 @@ fun App() {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
+            // Vorab-Prüfung: nur Audio/Video ist transkribierbar. Manche
+            // Dateiauswahl-Apps zeigen trotz MIME-Filter alles an.
+            val mime = context.contentResolver.getType(uri) ?: ""
+            if (mime.isNotEmpty() && !mime.startsWith("audio/") && !mime.startsWith("video/")) {
+                val name = uri.lastPathSegment?.substringAfterLast('/') ?: mime
+                statusMessage = "„$name" + "“ ist keine Audio-/Videodatei — PDFs, Bilder und Dokumente enthalten keine transkribierbare Sprache."
+                return@rememberLauncherForActivityResult
+            }
             busy = true
             statusMessage = "Dekodiere Datei…"
             scope.launch {
@@ -270,7 +278,10 @@ fun App() {
                     if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
                     statusMessage = null
                 } catch (e: Exception) {
-                    statusMessage = "Fehler: ${e.message}"
+                    statusMessage = if (e.message?.contains("extractor", ignoreCase = true) == true)
+                        "Datei nicht lesbar: kein unterstütztes Audio-/Videoformat " +
+                        "(z. B. PDF, Bild oder Textdatei ausgewählt)"
+                    else "Fehler: ${e.message}"
                 } finally {
                     busy = false
                 }

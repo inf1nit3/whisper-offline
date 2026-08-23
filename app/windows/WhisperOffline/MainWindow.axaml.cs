@@ -776,9 +776,23 @@ public partial class MainWindow : Window
         });
         if (files.Count == 0) return;
 
+        var path = files[0].TryGetLocalPath();
+        // Vorab-Prüfung: nur Audio/Video ist transkribierbar (Filter der
+        // Auswahl hat eine „Alle Dateien“-Option).
+        var knownMedia = new[]
+        {
+            ".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".opus", ".wma", ".amr", ".3gp",
+            ".mp4", ".mkv", ".webm", ".mov", ".avi",
+        };
+        if (path == null || !knownMedia.Contains(Path.GetExtension(path).ToLowerInvariant()))
+        {
+            StatusLabel.Text = $"„{Path.GetFileName(path ?? "?")}“ ist keine Audio-/Videodatei — " +
+                               "PDFs, Bilder und Dokumente enthalten keine transkribierbare Sprache.";
+            return;
+        }
+
         busy = true;
         FileButton.IsEnabled = RecordButton.IsEnabled = false;
-        var path = files[0].TryGetLocalPath();
         StatusLabel.Text = $"Transkribiere „{Path.GetFileName(path)}“…";
         var lang = Lang;
         var result = await Task.Run(() => WhisperCli.Transcribe(path!, lang, out var err)
