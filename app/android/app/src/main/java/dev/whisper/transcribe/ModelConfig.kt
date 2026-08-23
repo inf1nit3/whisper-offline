@@ -16,8 +16,17 @@ object Settings {
     private const val KEY_LANGUAGE = "language"
     private const val KEY_VERSION = "settings_version"
     private const val CURRENT_VERSION = 1
+    private const val KEY_ONBOARDING = "onboarding_done"
 
     fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /// Einführung beim ersten Start; nach dem Durchlauf dauerhaft erledigt.
+    fun onboardingDone(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ONBOARDING, false)
+
+    fun setOnboardingDone(context: Context) {
+        prefs(context).edit().putBoolean(KEY_ONBOARDING, true).apply()
+    }
 
     /// Einmalige Bereinigung. `getBoolean` greift auf den Standardwert nur zurück,
     /// wenn der Schlüssel fehlt — von Hand gesetzte Schalter überleben eine

@@ -31,6 +31,9 @@ public sealed class AppSettings
     /// Direkt in den Infobereich starten, ohne Fenster.
     public bool StartMinimized { get; set; } = false;
 
+    /// Einführung beim ersten Start; nach dem Durchlauf dauerhaft erledigt.
+    public bool OnboardingDone { get; set; } = false;
+
     // -----------------------------------------------------------------------
 
     [JsonIgnore]

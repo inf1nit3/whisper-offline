@@ -60,7 +60,8 @@ public partial class MainWindow : Window
         UpdateHotkeyLabel();
         suppressSettingsEvents = false;
 
-        // Gespeichertes Modell aktivieren, falls vorhanden; sonst Auswahl öffnen
+        // Gespeichertes Modell aktivieren, falls vorhanden; sonst Auswahl öffnen.
+        // Beim allerersten Start kommt zuerst die Einführung.
         string? stored = string.IsNullOrEmpty(settings.Model) ? null : settings.Model;
 
         var local = ModelRegistry.LocalModelFiles();
@@ -74,7 +75,12 @@ public partial class MainWindow : Window
             WhisperCli.SelectedModel = Path.Combine(WhisperCli.ModelsDir, local[0]);
             UpdateModelLabel();
         }
-        else
+
+        if (!settings.OnboardingDone)
+        {
+            ShowOnboarding();
+        }
+        else if (local.Count == 0)
         {
             _ = OpenPickerAsync();
         }
@@ -585,6 +591,82 @@ public partial class MainWindow : Window
         UpdateInstallButton.IsEnabled = false;
         await ApplyUpdateAsync(pendingUpdate);
         UpdateInstallButton.IsEnabled = true;
+    }
+
+    // ---------- Einführung beim ersten Start ----------
+
+    private record OnboardingPage(string Title, string? Intro, string[] Bullets, string? Footer);
+
+    private static readonly OnboardingPage[] OnboardingPages =
+    {
+        new("Willkommen!",
+            "Dies ist Scheisssewasser's Whisper — eine private Sprach-Transkriptions-App von Scheisssewasser. Sie wandelt Gesprochenes in Text um, direkt auf deinem Gerät.",
+            Array.Empty<string>(),
+            "Privat entwickelt — für den persönlichen Einsatz, ohne Firma und ohne kommerzielle Interessen."),
+        new("Was kann die App?",
+            null,
+            new[]
+            {
+                "🎙  Sprache zu Text: Mikrofonaufnahmen in Sekunden transkribieren",
+                "📄  Dateien: Audio- und Videodateien in Text umwandeln",
+                "⌨️  Diktat-Modus: per Hotkey (Standard: Strg+Alt+Leertaste) in jedes Textfeld",
+                "🕘  Verlauf: alle Transkriptionen bleiben abrufbar",
+                "🌐  Sprachen: Deutsch, English oder automatisch",
+            }, null),
+        new("Deine Vorteile",
+            null,
+            new[]
+            {
+                "🔒  100 % offline: Dein Audio verlässt das Gerät nie — keine Cloud, keine Datensammelei",
+                "💸  Kostenlos und ohne Konto nutzbar",
+                "⚙️  Mehrere Modelle wählbar — maximal genau oder blitzschnell",
+                "🔄  Automatische Updates direkt aus der App",
+            }, null),
+        new("Los geht's!",
+            "Im nächsten Schritt wählst du ein Sprachmodell. Es wird einmalig von einem Server von scheisssewasser.xyz bezogen und heruntergeladen — danach läuft alles komplett offline.",
+            Array.Empty<string>(),
+            "Klicke auf „Los geht's“, um zu beginnen."),
+    };
+
+    private int onboardingPage = 0;
+
+    private void ShowOnboarding()
+    {
+        onboardingPage = 0;
+        RenderOnboardingPage();
+        OnboardingPanel.IsVisible = true;
+        MainPanel.IsVisible = false;
+    }
+
+    private void RenderOnboardingPage()
+    {
+        var p = OnboardingPages[onboardingPage];
+        OnboardingPageIndicator.Text = $"Seite {onboardingPage + 1} von {OnboardingPages.Length}";
+        OnboardingTitle.Text = p.Title;
+        OnboardingIntro.Text = p.Intro ?? "";
+        OnboardingIntro.IsVisible = p.Intro != null;
+        OnboardingBullets.Children.Clear();
+        foreach (var b in p.Bullets)
+            OnboardingBullets.Children.Add(new TextBlock { Text = "•  " + b, TextWrapping = TextWrapping.Wrap });
+        OnboardingFooter.Text = p.Footer ?? "";
+        OnboardingFooter.IsVisible = p.Footer != null;
+        OnboardingNextButton.Content = onboardingPage == OnboardingPages.Length - 1 ? "Los geht's" : "Weiter";
+    }
+
+    private void OnOnboardingNext(object? sender, RoutedEventArgs e)
+    {
+        if (onboardingPage < OnboardingPages.Length - 1)
+        {
+            onboardingPage++;
+            RenderOnboardingPage();
+            return;
+        }
+        settings.OnboardingDone = true;
+        settings.Save();
+        OnboardingPanel.IsVisible = false;
+        MainPanel.IsVisible = true;
+        if (ModelRegistry.LocalModelFiles().Count == 0)
+            _ = OpenPickerAsync();
     }
 
     // ---------- Changelog (eingebettete CHANGELOG.md) ----------

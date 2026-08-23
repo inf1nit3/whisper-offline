@@ -81,6 +81,32 @@
             </Grid>
         </Border>
 
+        <!-- Einführung beim ersten Start -->
+        <Border x:Name="OnboardingPanel" IsVisible="False" Background="{DynamicResource SystemRegionBrush}">
+            <Grid RowDefinitions="Auto,*,Auto" Margin="32">
+                <StackPanel Grid.Row="0" Spacing="6" Margin="0,0,0,16">
+                    <TextBlock Text="Scheisssewasser's Whisper" FontSize="26" FontWeight="Bold" />
+                    <TextBlock x:Name="OnboardingPageIndicator" Text="Seite 1 von 4"
+                               Foreground="Gray" FontSize="13" />
+                </StackPanel>
+                <Border Grid.Row="1" BorderBrush="LightGray" BorderThickness="1"
+                        CornerRadius="8" Padding="20">
+                    <ScrollViewer>
+                        <StackPanel Spacing="10">
+                            <TextBlock x:Name="OnboardingTitle" Text="" FontSize="20" FontWeight="Bold" />
+                            <TextBlock x:Name="OnboardingIntro" TextWrapping="Wrap" IsVisible="False" />
+                            <StackPanel x:Name="OnboardingBullets" Spacing="8" />
+                            <TextBlock x:Name="OnboardingFooter" TextWrapping="Wrap" IsVisible="False"
+                                       Foreground="Gray" FontSize="12" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+                <Button x:Name="OnboardingNextButton" Grid.Row="2" Content="Weiter"
+                        Click="OnOnboardingNext" MinWidth="220" Height="44"
+                        HorizontalAlignment="Center" Margin="0,16,0,0" />
+            </Grid>
+        </Border>
+
         <!-- Changelog -->
         <Border x:Name="ChangelogPanel" IsVisible="False" Background="{DynamicResource SystemRegionBrush}">
             <Grid RowDefinitions="Auto,*" Margin="24">

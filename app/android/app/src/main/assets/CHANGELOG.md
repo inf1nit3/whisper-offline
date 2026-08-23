@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3
+
+- Einführung beim ersten App-Start (4 Seiten): Was kann die App, von wem sie
+  kommt und die Vorteile der Nutzung — einmalig, danach dauerhaft erledigt
+
 ## v1.2
 
 - Changelog-Anzeige in der App (offline, über das Buch-Symbol bzw. den Changelog-Button)

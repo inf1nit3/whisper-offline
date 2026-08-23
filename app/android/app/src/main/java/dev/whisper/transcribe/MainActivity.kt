@@ -150,8 +150,10 @@ fun App() {
         }
     }
 
-    // Beim Start: gespeichertes Modell laden; sonst Auswahl anzeigen
-    LaunchedEffect(Unit) {
+    // Beim Start: Einführung beim allerersten Lauf, danach Modell laden/auswählen
+    var showOnboarding by remember { mutableStateOf(false) }
+
+    fun proceedAfterOnboarding() {
         val stored = prefs.getString("model_file", null)
         val exists = stored != null && File(ModelRegistry.modelsDir(context), stored).exists()
         if (exists) {
@@ -160,6 +162,14 @@ fun App() {
             pickerVisible = true
         }
         refreshManifest()
+    }
+
+    LaunchedEffect(Unit) {
+        if (Settings.onboardingDone(context)) {
+            proceedAfterOnboarding()
+        } else {
+            showOnboarding = true
+        }
     }
 
     var hasAudioPermission by remember {
@@ -589,6 +599,16 @@ fun App() {
                 }
             }
 
+            if (showOnboarding) {
+                OnboardingOverlay(
+                    onFinish = {
+                        Settings.setOnboardingDone(context)
+                        showOnboarding = false
+                        proceedAfterOnboarding()
+                    }
+                )
+            }
+
             if (pickerVisible) {
                 ModelPickerOverlay(
                     manifest = manifest,
@@ -851,6 +871,104 @@ fun ModelPickerOverlay(
                     }
                 }
             }
+        }
+    }
+}
+
+/// Einführung beim ersten App-Start: 4 Seiten, ohne Überspringen.
+private data class OnboardingPage(
+    val title: String,
+    val intro: String? = null,
+    val bullets: List<String> = emptyList(),
+    val footer: String? = null,
+)
+
+@Composable
+fun OnboardingOverlay(onFinish: () -> Unit) {
+    val pages = listOf(
+        OnboardingPage(
+            title = "Willkommen!",
+            intro = "Dies ist Scheisssewasser's Whisper — eine private Sprach-Transkriptions-App von Scheisssewasser. Sie wandelt Gesprochenes in Text um, direkt auf deinem Gerät.",
+            footer = "Privat entwickelt — für den persönlichen Einsatz, ohne Firma und ohne kommerzielle Interessen.",
+        ),
+        OnboardingPage(
+            title = "Was kann die App?",
+            bullets = listOf(
+                "🎙  Sprache zu Text: Mikrofonaufnahmen in Sekunden transkribieren",
+                "📄  Dateien: Audio- und Videodateien in Text umwandeln",
+                "⌨️  Diktat-Modus: unter Windows per Hotkey in jedes Textfeld, auf Android über die Diktat-Kachel",
+                "🕘  Verlauf: alle Transkriptionen bleiben abrufbar",
+                "🌐  Sprachen: Deutsch, English oder automatisch",
+            ),
+        ),
+        OnboardingPage(
+            title = "Deine Vorteile",
+            bullets = listOf(
+                "🔒  100 % offline: Dein Audio verlässt das Gerät nie — keine Cloud, keine Datensammelei",
+                "💸  Kostenlos und ohne Konto nutzbar",
+                "⚙️  Mehrere Modelle wählbar — maximal genau oder blitzschnell",
+                "🔄  Automatische Updates direkt aus der App",
+            ),
+        ),
+        OnboardingPage(
+            title = "Los geht's!",
+            intro = "Im nächsten Schritt wählst du ein Sprachmodell. Es wird einmalig von einem Server von scheisssewasser.xyz bezogen und heruntergeladen — danach läuft alles komplett offline.",
+            footer = "Tippe auf „Weiter“, um zu beginnen.",
+        ),
+    )
+    var page by remember { mutableStateOf(0) }
+    val isLast = page == pages.lastIndex
+
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.weight(0.6f))
+            Text(
+                "Scheisssewasser's Whisper",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "Seite ${page + 1} von ${pages.size}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Spacer(Modifier.weight(0.4f))
+
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp)) {
+                    Text(pages[page].title, style = MaterialTheme.typography.titleLarge)
+                    Spacer(Modifier.height(10.dp))
+                    pages[page].intro?.let {
+                        Text(it, style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    pages[page].bullets.forEach {
+                        Text("•  $it", style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(vertical = 3.dp))
+                    }
+                    pages[page].footer?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            Button(
+                onClick = { if (isLast) onFinish() else page++ },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) {
+                Text(if (isLast) "Los geht's" else "Weiter", fontSize = MaterialTheme.typography.titleMedium.fontSize)
+            }
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
