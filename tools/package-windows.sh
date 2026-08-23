@@ -14,9 +14,24 @@ cd "$ROOT/app/windows/WhisperOffline"
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
     -o "$OUT"
 
-# 2. Engine (per MinGW kreuzkompiliertes whisper-cli inkl. CPU-Dispatch-DLLs)
-cp "$ROOT/dist/windows/whisper-cli.exe" "$OUT/engine/"
-cp "$ROOT"/dist/windows/*.dll "$OUT/engine/"
+# 2. Engine (per MinGW kreuzkompiliert, inkl. CPU-Dispatch-DLLs)
+#    whisper_shim.dll hält das Modell im Prozess der App geladen; whisper-cli.exe
+#    bleibt als Rückfallweg und für die Dateitranskription (Formatunterstützung).
+SHIM="$ROOT/engine/shim/build-win64"
+if [ -f "$SHIM/whisper_shim.dll" ]; then
+    cp "$SHIM/whisper_shim.dll" "$OUT/engine/"
+    cp "$SHIM"/bin/*.dll "$OUT/engine/"
+    cp "$SHIM"/bin/whisper-cli.exe "$OUT/engine/"
+    # MinGW-Laufzeit (GPL mit Runtime-Exception, Weitervertrieb erlaubt) —
+    # libwhisper.dll importiert sie, ohne sie startet nichts.
+    cp "$ROOT"/dist/windows/libgcc_s_seh-1.dll "$OUT/engine/"
+    cp "$ROOT"/dist/windows/libstdc++-6.dll "$OUT/engine/"
+else
+    echo "WARNUNG: whisper_shim.dll fehlt — die App fällt auf whisper-cli zurück."
+    echo "         Bauen mit: engine/shim (siehe README)."
+    cp "$ROOT/dist/windows/whisper-cli.exe" "$OUT/engine/"
+    cp "$ROOT"/dist/windows/*.dll "$OUT/engine/"
+fi
 
 # 3. Modellordner anlegen — Modelle kommen beim ersten Start vom VPS
 #    (siehe server/README-server.md). Zum Bündeln einfach .bin-Dateien hier kopieren.

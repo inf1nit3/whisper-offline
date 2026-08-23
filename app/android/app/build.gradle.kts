@@ -10,6 +10,9 @@ android {
 
     defaultConfig {
         applicationId = "dev.whisper.transcribe"
+        // Die echte Untergrenze setzt die Engine: die arm64-Variante braucht i8mm
+        // (SoCs ab ~2021), geprüft zur Laufzeit in whisper_jni.c.
+        // Nur mit -DGGML_VULKAN=ON muss hier 28 stehen (vkGetPhysicalDeviceFeatures2).
         minSdk = 26
         targetSdk = 36
         versionCode = 1

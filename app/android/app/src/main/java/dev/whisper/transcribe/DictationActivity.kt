@@ -21,7 +21,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -33,6 +35,7 @@ class DictationActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        Settings.migrate(this)
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         val fileName = prefs.getString("model_file", null)
         val modelFile = fileName?.let { File(ModelRegistry.modelsDir(this), it) }
@@ -70,22 +73,27 @@ fun DictationUi(modelPath: String) {
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasPermission = granted }
 
+    // Das Modell wird parallel zur Aufnahme geladen. Vorher lief das Laden
+    // davor — bei kaltem Prozess sprach man also mehrere Sekunden ins Leere,
+    // bevor das Mikrofon überhaupt lief. Für den Aufruf per Taste oder Kachel
+    // ist das der entscheidende Unterschied.
+    var modelJob by remember { mutableStateOf<Deferred<Boolean>?>(null) }
+
     fun startRecording() {
-        scope.launch {
-            withContext(Dispatchers.IO) {
-                WhisperBridge.loadModel(modelPath)
-            }
-            if (!hasPermission) {
-                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                return@launch
-            }
-            if (recorder.start()) {
-                state = DictationState.RECORDING
-                message = "Sprich jetzt — tippe zum Beenden"
-            } else {
-                state = DictationState.ERROR
-                message = "Mikrofon belegt?"
-            }
+        if (!hasPermission) {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        if (recorder.start()) {
+            state = DictationState.RECORDING
+            message = "Sprich jetzt — tippe zum Beenden"
+        } else {
+            state = DictationState.ERROR
+            message = "Mikrofon belegt?"
+            return
+        }
+        modelJob = scope.async(Dispatchers.IO) {
+            WhisperBridge.loadModel(modelPath, Settings.useGpu(context))
         }
     }
 
@@ -94,9 +102,15 @@ fun DictationUi(modelPath: String) {
         state = DictationState.TRANSCRIBING
         message = "Transkribiere…"
         scope.launch {
+            // Falls das Modell noch lädt: hier warten, nicht vor der Aufnahme.
+            if (modelJob?.await() == false) {
+                state = DictationState.ERROR
+                message = "Modell konnte nicht geladen werden"
+                return@launch
+            }
             val t0 = System.currentTimeMillis()
             val text = withContext(Dispatchers.Default) {
-                WhisperBridge.transcribe(samples, "auto")
+                WhisperBridge.transcribe(samples, Settings.language(context), Settings.shortCtx(context))
             }
             val secs = (System.currentTimeMillis() - t0) / 1000f
             val trimmed = text.trim()
@@ -113,7 +127,7 @@ fun DictationUi(modelPath: String) {
                     timeMs = System.currentTimeMillis(),
                     text = trimmed,
                     model = modelPath.substringAfterLast('/'),
-                    language = "auto",
+                    language = Settings.language(context),
                     audioSeconds = secs,
                 ))
                 Toast.makeText(context, "Text kopiert — jetzt im Chat einfügen", Toast.LENGTH_SHORT).show()

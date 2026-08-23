@@ -4,5 +4,5 @@ namespace WhisperOffline;
 /// Pfad zu den Modelldateien = Verzeichnis des Manifests + "file"-Eintrag.
 public static class ModelConfig
 {
-    public const string ManifestUrl = "http://169.58.211.209:8901/models.json";
+    public const string ManifestUrl = "https://whisper.scheisssewasser.xyz/models.json";
 }

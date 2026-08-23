@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Scheisssewasser\'s Whisper</string>
+    <string name="shortcut_dictate_short">Diktat</string>
+    <string name="shortcut_dictate_long">Diktat starten</string>
+    <string name="dictate_label">Whisper Diktat</string>
+</resources>

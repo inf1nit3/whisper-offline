@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Statischer Launcher-Shortcut: langes Drücken auf das App-Symbol, dann
+     "Diktat" antippen oder auf den Startbildschirm ziehen. Viele Launcher und
+     Tastenbeleger können solche Shortcuts direkt auf eine Taste oder Geste legen. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="dictate"
+        android:enabled="true"
+        android:icon="@drawable/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_dictate_short"
+        android:shortcutLongLabel="@string/shortcut_dictate_long">
+        <intent
+            android:action="dev.whisper.transcribe.action.DICTATE"
+            android:targetPackage="dev.whisper.transcribe"
+            android:targetClass="dev.whisper.transcribe.DictationActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

@@ -34,11 +34,18 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Settings.migrate(this)
         setContent { App() }
     }
 }
 
-private val LANGUAGES = listOf("auto" to "Automatisch", "de" to "Deutsch", "en" to "English")
+// "Automatisch" kostet einen kompletten zusätzlichen Encoder-Durchlauf zur
+// Spracherkennung — bei über 90 % Encoder-Anteil also fast die doppelte Zeit.
+private val LANGUAGES = listOf(
+    "de" to "Deutsch",
+    "en" to "English",
+    "auto" to "Automatisch (2× so lang)",
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,10 +63,19 @@ fun App() {
     var transcript by remember { mutableStateOf("") }
     var durationS by remember { mutableStateOf(0f) }
     var elapsedS by remember { mutableStateOf(0f) }
-    var language by remember { mutableStateOf("auto") }
+    var language by remember { mutableStateOf(Settings.language(context)) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var showHistory by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(listOf<HistoryEntry>()) }
+    var useGpu by remember { mutableStateOf(Settings.useGpu(context)) }
+    var backendInfo by remember { mutableStateOf("") }
+    val gpuAvailable = remember { WhisperBridge.hasGpuBackend() }
+    var shortCtx by remember { mutableStateOf(Settings.shortCtx(context)) }
+    var audioCtx by remember { mutableStateOf(0) }
+    var timings by remember { mutableStateOf("") }
+    // Parakeet ist mehrsprachig und hat kein festes Encoder-Fenster — beide
+    // Bedienelemente wären dort wirkungslos und werden ausgeblendet.
+    var isParakeet by remember { mutableStateOf(false) }
 
     fun recordHistory(text: String, audioSeconds: Float) {
         HistoryStore.add(context, HistoryEntry(
@@ -86,11 +102,15 @@ fun App() {
         modelReady = false
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                WhisperBridge.loadModel(File(ModelRegistry.modelsDir(context), fileName).absolutePath)
+                WhisperBridge.loadModel(
+                    File(ModelRegistry.modelsDir(context), fileName).absolutePath, useGpu
+                )
             }
             modelReady = ok
             modelFile = fileName
             prefs.edit().putString("model_file", fileName).apply()
+            backendInfo = if (ok) WhisperBridge.backendInfo() else ""
+            isParakeet = ok && WhisperBridge.engineKind() == WhisperBridge.ENGINE_PARAKEET
             modelState = if (ok) "$displayName bereit" else "Modellfehler"
         }
     }
@@ -165,9 +185,11 @@ fun App() {
                     statusMessage = "Transkribiere…"
                     val t0 = System.currentTimeMillis()
                     val text = withContext(Dispatchers.Default) {
-                        WhisperBridge.transcribe(samples, language)
+                        WhisperBridge.transcribe(samples, language, shortCtx)
                     }
                     elapsedS = (System.currentTimeMillis() - t0) / 1000f
+                    audioCtx = WhisperBridge.lastAudioCtx()
+                    timings = WhisperBridge.lastTimings()
                     transcript = text.trim()
                     if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
                     statusMessage = null
@@ -207,20 +229,32 @@ fun App() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(modelState, style = MaterialTheme.typography.bodySmall)
+                if (backendInfo.isNotEmpty()) {
+                    Text(
+                        backendInfo,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
 
                 var langExpanded by remember { mutableStateOf(false) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box {
-                        OutlinedButton(onClick = { langExpanded = true }) {
+                        OutlinedButton(onClick = { langExpanded = true }, enabled = !isParakeet) {
                             Icon(Icons.Filled.Language, null)
                             Spacer(Modifier.width(6.dp))
-                            Text(LANGUAGES.first { it.first == language }.second)
+                            Text(
+                                if (isParakeet) "Mehrsprachig"
+                                else LANGUAGES.first { it.first == language }.second
+                            )
                         }
                         DropdownMenu(expanded = langExpanded, onDismissRequest = { langExpanded = false }) {
                             LANGUAGES.forEach { (code, label) ->
                                 DropdownMenuItem(text = { Text(label) }, onClick = {
-                                    language = code; langExpanded = false
+                                    language = code
+                                    Settings.setLanguage(context, code)
+                                    langExpanded = false
                                 })
                             }
                         }
@@ -232,7 +266,47 @@ fun App() {
                     }
                 }
 
-                Spacer(Modifier.height(24.dp))
+                // Kürzt das 30-s-Encoder-Fenster auf die tatsächliche Audiolänge.
+                // Bei kurzem Diktat der größte Zeitfresser — laut whisper.h aber
+                // experimentell, deshalb abschaltbar zum Qualitätsvergleich.
+                if (!isParakeet) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("Kurzes Audio beschleunigen", style = MaterialTheme.typography.bodySmall)
+                        Switch(
+                            checked = shortCtx,
+                            enabled = !busy && !recording,
+                            onCheckedChange = { on ->
+                                shortCtx = on
+                                Settings.setShortCtx(context, on)
+                            }
+                        )
+                    }
+                }
+
+                // Vergleichsschalter CPU gegen GPU — nur sichtbar, wenn die
+                // Engine überhaupt mit einem GPU-Backend gebaut wurde.
+                if (gpuAvailable) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("GPU (Vulkan)", style = MaterialTheme.typography.bodySmall)
+                        Switch(
+                            checked = useGpu,
+                            enabled = !busy && !recording && downloadingFile == null,
+                            onCheckedChange = { on ->
+                                useGpu = on
+                                Settings.setUseGpu(context, on)
+                                modelFile?.let { loadModel(it) }
+                            }
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
 
                 Button(
                     onClick = {
@@ -254,9 +328,11 @@ fun App() {
                             scope.launch {
                                 val t0 = System.currentTimeMillis()
                                 val text = withContext(Dispatchers.Default) {
-                                    WhisperBridge.transcribe(samples, language)
+                                    WhisperBridge.transcribe(samples, language, shortCtx)
                                 }
                                 elapsedS = (System.currentTimeMillis() - t0) / 1000f
+                                audioCtx = WhisperBridge.lastAudioCtx()
+                                timings = WhisperBridge.lastTimings()
                                 transcript = text.trim()
                                 if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
                                 statusMessage = null
@@ -297,9 +373,34 @@ fun App() {
 
                 if (durationS > 0 && !recording) {
                     Text(
-                        "Audio: %.1f s  ·  Dauer: %.1f s".format(durationS, elapsedS),
+                        "Audio: %.1f s  ·  Dauer: %.1f s  ·  Fenster: %d".format(
+                            durationS, elapsedS, audioCtx
+                        ),
                         style = MaterialTheme.typography.bodySmall
                     )
+                }
+
+                // Aufschlüsselung direkt aus whisper.cpp: mel, encode, decode,
+                // prompt — plus die fallbacks-Zeile, die anzeigt, ob der Decoder
+                // mit höherer Temperatur neu angesetzt hat.
+                if (timings.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        Modifier.fillMaxWidth(),
+                        tonalElevation = 1.dp,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            timings.trim()
+                                .lineSequence()
+                                .map { it.removePrefix("whisper_print_timings:").trim() }
+                                .filter { it.isNotEmpty() && !it.startsWith("load time") }
+                                .joinToString("\n"),
+                            Modifier.padding(8.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(16.dp))
@@ -417,9 +518,16 @@ fun HistoryOverlay(
                                         }
                                     }
                                 }
+                                // heightIn MUSS vor verticalScroll stehen: LazyColumn
+                                // misst seine Kinder mit unbegrenzter Höhe, und ein
+                                // vertikal scrollbares Element unter Infinity-Constraints
+                                // wirft in Compose eine IllegalStateException — die App
+                                // ging deshalb beim Öffnen des Verlaufs kommentarlos aus.
                                 Text(
                                     e.text,
-                                    Modifier.verticalScroll(rememberScrollState()).heightIn(max = 160.dp)
+                                    Modifier
+                                        .heightIn(max = 160.dp)
+                                        .verticalScroll(rememberScrollState())
                                 )
                                 Text(
                                     listOfNotNull(

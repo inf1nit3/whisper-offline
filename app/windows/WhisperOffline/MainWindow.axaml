@@ -10,10 +10,11 @@
         <Grid x:Name="MainPanel" RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="16">
             <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="Sprache:" VerticalAlignment="Center" />
-                <ComboBox x:Name="LanguageBox" SelectedIndex="0" Width="130">
-                    <ComboBoxItem Content="Automatisch" Tag="auto" />
+                <!-- "Automatisch" kostet einen kompletten zusätzlichen Encoder-Durchlauf -->
+                <ComboBox x:Name="LanguageBox" SelectedIndex="0" Width="170">
                     <ComboBoxItem Content="Deutsch" Tag="de" />
                     <ComboBoxItem Content="English" Tag="en" />
+                    <ComboBoxItem Content="Automatisch (2× so lang)" Tag="auto" />
                 </ComboBox>
                 <Button Content="&#59256;  Modell wechseln" Click="OnOpenModelPicker" Margin="8,0,0,0" />
                 <Button Content="&#128218;  Verlauf" Click="OnOpenHistory" Margin="8,0,0,0" />
@@ -28,11 +29,27 @@
                         Click="OnFileClick" />
             </StackPanel>
 
-            <StackPanel Grid.Row="2" Margin="0,12,0,0">
-                <TextBlock Text="Tipp: Strg+Alt+Leertaste = Diktat in das aktive Fenster (z. B. Chat) einfügen"
+            <StackPanel Grid.Row="2" Margin="0,12,0,0" Spacing="6">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Diktat-Hotkey:" VerticalAlignment="Center" />
+                    <Button x:Name="HotkeyButton" MinWidth="200" Click="OnHotkeyCapture"
+                            ToolTip.Tip="Anklicken, dann die gewünschte Kombination drücken" />
+                    <TextBlock x:Name="HotkeyHint" VerticalAlignment="Center"
+                               FontSize="12" Foreground="Gray" TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                    <CheckBox x:Name="AutostartBox" Content="Mit Windows starten"
+                              Click="OnAutostartChanged" />
+                    <CheckBox x:Name="StartMinimizedBox" Content="Minimiert starten"
+                              Click="OnStartMinimizedChanged" />
+                    <CheckBox x:Name="ShortCtxBox" Content="Kurzes Audio beschleunigen"
+                              Click="OnShortCtxChanged"
+                              ToolTip.Tip="Kürzt das Encoder-Fenster auf die Audiolänge. Experimentell — kann die Qualität kosten." />
+                </StackPanel>
+                <TextBlock Text="Das Fenster schließen legt die App in den Infobereich. Der Hotkey wirkt überall."
                            FontSize="12" Foreground="Gray" TextWrapping="Wrap" />
-                <TextBlock x:Name="StatusLabel" Text="" Margin="0,6,0,0"
-                           Foreground="Gray" TextWrapping="Wrap" />
+                <TextBlock x:Name="StatusLabel" Text="" Foreground="Gray" TextWrapping="Wrap" />
+                <TextBlock x:Name="EngineLabel" Text="" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
             </StackPanel>
 
             <TextBox Grid.Row="3" x:Name="TranscriptBox" Margin="0,12,0,0"

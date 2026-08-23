@@ -16,6 +16,9 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.7" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.7" />
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- Autostart über den Run-Schlüssel des Benutzers. Als Paket statt über ein
+         -windows-Zielframework, damit der Cross-Build von macOS aus weiter geht. -->
+    <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
   </ItemGroup>
 
 </Project>

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -33,26 +34,34 @@ public partial class MainWindow : Window
     private bool allowClose = false;
     private TrayIcon? tray;
 
-    private string SettingsPath => Path.Combine(WhisperCli.BaseDir, "settings.json");
-
-    private record Settings(string Model);
+    private readonly AppSettings settings = AppSettings.Load();
+    private bool capturingHotkey = false;
+    private bool suppressSettingsEvents = true;
 
     public MainWindow()
     {
         InitializeComponent();
+
+        language = settings.Language;
+        foreach (var item in LanguageBox.Items.OfType<ComboBoxItem>())
+            if (item.Tag as string == language) LanguageBox.SelectedItem = item;
+
         LanguageBox.SelectionChanged += (_, _) =>
         {
-            language = (LanguageBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "auto";
+            language = (LanguageBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "de";
+            if (suppressSettingsEvents) return;
+            settings.Language = language;
+            settings.Save();
         };
 
+        AutostartBox.IsChecked = settings.Autostart;
+        StartMinimizedBox.IsChecked = settings.StartMinimized;
+        ShortCtxBox.IsChecked = settings.ShortCtx;
+        UpdateHotkeyLabel();
+        suppressSettingsEvents = false;
+
         // Gespeichertes Modell aktivieren, falls vorhanden; sonst Auswahl öffnen
-        string? stored = null;
-        try
-        {
-            if (File.Exists(SettingsPath))
-                stored = JsonSerializer.Deserialize<Settings>(File.ReadAllText(SettingsPath))?.Model;
-        }
-        catch { }
+        string? stored = string.IsNullOrEmpty(settings.Model) ? null : settings.Model;
 
         var local = ModelRegistry.LocalModelFiles();
         if (stored != null && local.Contains(stored))
@@ -76,7 +85,150 @@ public partial class MainWindow : Window
             if (!allowClose) { e.Cancel = true; Hide(); }
         };
         SetupTray();
-        HotkeyHook.Start(() => Dispatcher.UIThread.Post(ToggleDictation));
+        HotkeyHook.Start(() => Dispatcher.UIThread.Post(ToggleDictation),
+                         settings.HotkeyModifiers, settings.HotkeyVk);
+
+        // Modell einmal in die Engine laden, damit der erste Hotkey-Druck nicht
+        // auf 180+ MB von der Platte wartet. Läuft im Hintergrund weiter.
+        Opened += (_, _) => _ = WarmUpAsync();
+        if (Program.StartHidden || settings.StartMinimized)
+        {
+            // Ohne Fenster starten: nur Infobereich, wartet auf den Hotkey.
+            Opened += (_, _) => Hide();
+            _ = WarmUpAsync();
+        }
+    }
+
+    /// Lädt das Modell in die In-Process-Engine. Der Prozess belegt danach den
+    /// Modellspeicher dauerhaft, spart aber bei jedem Diktat das Neuladen.
+    private async Task WarmUpAsync()
+    {
+        var model = WhisperCli.SelectedModel;
+        if (!WhisperNative.Available || !File.Exists(model)) { UpdateEngineLabel(); return; }
+        var ok = await Task.Run(() => WhisperNative.EnsureLoaded(model));
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (ok) engineWarm = true;
+            UpdateEngineLabel();
+        });
+    }
+
+    private bool engineWarm = false;
+
+    private void UpdateEngineLabel()
+    {
+        EngineLabel.Text = engineWarm
+            ? $"Engine geladen im Hintergrund · {WhisperNative.BackendInfo}"
+            : WhisperNative.Available
+                ? "Engine noch nicht geladen"
+                : "whisper_shim.dll nicht gefunden — Rückfall auf whisper-cli (langsamer)";
+
+        // Parakeet: mehrsprachig, kein festes Encoder-Fenster — beide
+        // Bedienelemente hätten dort keine Wirkung.
+        var parakeet = engineWarm && WhisperNative.IsParakeet;
+        LanguageBox.IsEnabled = !parakeet;
+        ShortCtxBox.IsEnabled = !parakeet;
+        if (parakeet) EngineLabel.Text += " · mehrsprachig, ohne Sprachauswahl";
+    }
+
+    /// Transkribiert Mikrofon-Samples. Bevorzugt die geladene Engine; nur wenn
+    /// die DLL fehlt oder scheitert, wird whisper-cli als Unterprozess benutzt.
+    private string TranscribeSamples(float[] samples)
+    {
+        var lang = string.IsNullOrEmpty(Lang) ? "auto" : Lang;
+        if (WhisperNative.EnsureLoaded(WhisperCli.SelectedModel))
+        {
+            var native = WhisperNative.Transcribe(samples, lang, settings.ShortCtx);
+            if (native != null) return native.Trim();
+        }
+        var wav = Path.Combine(Path.GetTempPath(), "whisper_offline_rec.wav");
+        WavWriter.Write16kMono(wav, samples);
+        return WhisperCli.Transcribe(wav, Lang, out _).Trim();
+    }
+
+    // ---------- Hotkey und Hintergrundbetrieb ----------
+
+    private void UpdateHotkeyLabel()
+    {
+        HotkeyButton.Content = capturingHotkey
+            ? "Kombination drücken…"
+            : HotkeySpec.Describe(settings.HotkeyModifiers, settings.HotkeyVk);
+        HotkeyHint.Text = HotkeyHook.LastBindOk
+            ? ""
+            : "Kombination ist belegt — bitte eine andere wählen";
+        if (tray != null)
+            tray.ToolTipText = "Scheisssewasser's Whisper — " +
+                HotkeySpec.Describe(settings.HotkeyModifiers, settings.HotkeyVk) + ": Diktat";
+    }
+
+    private void OnHotkeyCapture(object? sender, RoutedEventArgs e)
+    {
+        capturingHotkey = true;
+        UpdateHotkeyLabel();
+        Focus();
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (!capturingHotkey) { base.OnKeyDown(e); return; }
+
+        // Modifikatoren allein sind kein Kurzbefehl — weiter warten.
+        if (HotkeySpec.IsModifierKey(e.Key)) { e.Handled = true; return; }
+
+        if (e.Key == Key.Escape)
+        {
+            capturingHotkey = false;
+            UpdateHotkeyLabel();
+            e.Handled = true;
+            return;
+        }
+
+        var vk = HotkeySpec.ToVk(e.Key);
+        var mods = HotkeySpec.ToModifiers(e.KeyModifiers);
+        if (vk == 0 || mods == 0)
+        {
+            // Ohne Modifikator würde der Hotkey die Taste systemweit schlucken.
+            HotkeyHint.Text = "Bitte mit Strg, Alt, Umschalt oder Windows kombinieren";
+            e.Handled = true;
+            return;
+        }
+
+        settings.HotkeyModifiers = mods;
+        settings.HotkeyVk = vk;
+        settings.Save();
+        capturingHotkey = false;
+        HotkeyHook.Rebind(mods, vk);
+        // RegisterHotKey läuft asynchron auf dem Hotkey-Thread; kurz warten,
+        // damit LastBindOk den neuen Stand zeigt.
+        Dispatcher.UIThread.Post(async () =>
+        {
+            await Task.Delay(120);
+            UpdateHotkeyLabel();
+        });
+        UpdateHotkeyLabel();
+        e.Handled = true;
+    }
+
+    private void OnAutostartChanged(object? sender, RoutedEventArgs e)
+    {
+        if (suppressSettingsEvents) return;
+        settings.Autostart = AutostartBox.IsChecked == true;
+        settings.Save();
+        AppSettings.ApplyAutostart(settings.Autostart);
+    }
+
+    private void OnStartMinimizedChanged(object? sender, RoutedEventArgs e)
+    {
+        if (suppressSettingsEvents) return;
+        settings.StartMinimized = StartMinimizedBox.IsChecked == true;
+        settings.Save();
+    }
+
+    private void OnShortCtxChanged(object? sender, RoutedEventArgs e)
+    {
+        if (suppressSettingsEvents) return;
+        settings.ShortCtx = ShortCtxBox.IsChecked == true;
+        settings.Save();
     }
 
     private void SetupTray()
@@ -130,7 +282,9 @@ public partial class MainWindow : Window
             if (dictationTarget == IntPtr.Zero) return;
             if (!recorder.Start()) return;
             dictating = true;
-            StatusLabel.Text = "🎙 Diktat läuft — Strg+Alt+Leertaste beendet & fügt ein";
+            StatusLabel.Text = "🎙 Diktat läuft — " +
+                HotkeySpec.Describe(settings.HotkeyModifiers, settings.HotkeyVk) +
+                " beendet & fügt ein";
             return;
         }
 
@@ -144,14 +298,7 @@ public partial class MainWindow : Window
 
         busy = true;
         StatusLabel.Text = "Transkribiere Diktat…";
-        var lang = Lang;
-        var text = await Task.Run(() =>
-        {
-            var wav = Path.Combine(Path.GetTempPath(), "whisper_offline_dict.wav");
-            WavWriter.Write16kMono(wav, samples);
-            return WhisperCli.Transcribe(wav, lang, out var err);
-        });
-        text = text.Trim();
+        var text = (await Task.Run(() => TranscribeSamples(samples))).Trim();
         if (text.Length == 0)
         {
             StatusLabel.Text = "Kein Text erkannt";
@@ -356,15 +503,14 @@ public partial class MainWindow : Window
     private void Activate(string file)
     {
         WhisperCli.SelectedModel = Path.Combine(WhisperCli.ModelsDir, file);
-        try
-        {
-            Directory.CreateDirectory(WhisperCli.ModelsDir);
-            File.WriteAllText(SettingsPath,
-                JsonSerializer.Serialize(new Settings(file)));
-        }
-        catch { }
+        try { Directory.CreateDirectory(WhisperCli.ModelsDir); } catch { }
+        settings.Model = file;
+        settings.Save();
         UpdateModelLabel();
         ClosePicker();
+        // Modellwechsel: alte Gewichte freigeben, neue vorladen
+        engineWarm = false;
+        _ = WarmUpAsync();
     }
 
     private void ClosePicker()
@@ -402,13 +548,7 @@ public partial class MainWindow : Window
         var samples = recorder.Stop();
         RecordButton.Content = "🎙  Aufnahme starten";
         StatusLabel.Text = $"Transkribiere {samples.Length / 16000f:F1} s Audio…";
-        var lang = Lang;
-        var result = await Task.Run(() =>
-        {
-            var wav = Path.Combine(Path.GetTempPath(), "whisper_offline_rec.wav");
-            WavWriter.Write16kMono(wav, samples);
-            return WhisperCli.Transcribe(wav, lang, out var err) + (err.Length > 0 ? $"\n[{err}]" : "");
-        });
+        var result = await Task.Run(() => TranscribeSamples(samples));
         AppendTranscript(result);
         StatusLabel.Text = $"Fertig ({samples.Length / 16000f:F1} s Audio transkribiert).";
         busy = false;
