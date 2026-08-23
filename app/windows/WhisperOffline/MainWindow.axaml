@@ -85,7 +85,7 @@
             <Grid RowDefinitions="Auto,*,Auto" Margin="24">
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
                     <TextBlock Text="Modell wählen" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
-                    <TextBlock Text="Wird einmalig von deinem Server geladen" VerticalAlignment="Center"
+                    <TextBlock Text="Modelle werden einmalig von einem Server von scheisssewasser.xyz bezogen und heruntergeladen" VerticalAlignment="Center"
                                Foreground="Gray" />
                     <Button x:Name="PickerCloseButton" Content="Schließen" HorizontalAlignment="Right"
                             Click="OnClosePicker" />

@@ -688,7 +688,7 @@ fun ModelPickerOverlay(
                 Column {
                     Text("Modell wählen", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        "Wird einmalig von deinem Server geladen",
+                        "Modelle werden einmalig von einem Server von scheisssewasser.xyz bezogen und heruntergeladen",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
