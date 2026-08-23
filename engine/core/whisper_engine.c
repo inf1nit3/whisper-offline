@@ -18,8 +18,8 @@
 #if defined(__aarch64__) && !defined(__APPLE__)
 #  include <sys/auxv.h>
 #  include <asm/hwcap.h>
-#  ifndef HWCAP2_I8MM
-#    define HWCAP2_I8MM (1 << 13)
+#  ifndef HWCAP_ASIMDDP
+#    define HWCAP_ASIMDDP (1 << 20)
 #  endif
 #endif
 
@@ -31,6 +31,10 @@ static bool g_gpu = false;
 static char g_path[1024] = {0};
 static int  g_last_audio_ctx = 0;
 static char g_backend[64] = {0};
+
+/// Konkrete Ursache des letzten Ladefehlers, leer wenn kein Fehler.
+static char g_err[256] = {0};
+const char *we_last_error(void) { return g_err; }
 
 // ---------------------------------------------------------------------------
 // Log
@@ -230,12 +234,17 @@ static void free_contexts(void) {
 // ---------------------------------------------------------------------------
 bool we_load(const char *model_path, bool use_gpu) {
     if (model_path == NULL) return false;
+    g_err[0] = '\0';
 
-    // Die arm64-Engine wird mit -march=armv8.6-a+i8mm gebaut. Fehlt die
-    // Erweiterung, stürbe ggml mitten im Matmul mit SIGILL — hier gibt es
-    // stattdessen eine saubere Fehlermeldung.
+    // Der Build setzt mindestens armv8.2+dotprod+fp16 voraus. Fehlt dotprod
+    // (Geräte vor ~2018), stürbe ggml mitten im Matmul mit SIGILL — hier gibt
+    // es stattdessen eine saubere, begründete Fehlermeldung.
 #if defined(__aarch64__) && !defined(__APPLE__)
-    if ((getauxval(AT_HWCAP2) & HWCAP2_I8MM) == 0) return false;
+    if ((getauxval(AT_HWCAP) & HWCAP_ASIMDDP) == 0) {
+        snprintf(g_err, sizeof(g_err),
+                 "CPU ohne dotprod-Erweiterung (Gerät zu alt für diese Engine)");
+        return false;
+    }
 #endif
 
     whisper_log_set(engine_log_cb, NULL);
@@ -260,6 +269,7 @@ bool we_load(const char *model_path, bool use_gpu) {
         if (g_sink != NULL)
             g_sink(2 /* GGML_LOG_LEVEL_ERROR */,
                    "kein ggml-Backend gefunden — liegen die ggml-*-Module neben der Engine?\n");
+        snprintf(g_err, sizeof(g_err), "kein ggml-Backend gefunden");
         return false;
     }
 
@@ -296,7 +306,11 @@ bool we_load(const char *model_path, bool use_gpu) {
         }
     }
 
-    if (g_kind == WE_ENGINE_NONE) return false;
+    if (g_kind == WE_ENGINE_NONE) {
+        snprintf(g_err, sizeof(g_err),
+                 "Modellformat nicht lesbar — Datei beschädigt oder inkompatibel");
+        return false;
+    }
 
     snprintf(g_path, sizeof(g_path), "%s", model_path);
     g_gpu = want_gpu;

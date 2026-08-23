@@ -74,6 +74,9 @@ int we_last_audio_ctx(void);
 /// Zeitaufschlüsselung des letzten Laufs, so wie whisper.cpp sie meldet.
 const char *we_last_timings(void);
 
+/// Konkrete Ursache des letzten Ladefehlers; leer, wenn kein Fehler auftrat.
+const char *we_last_error(void);
+
 #ifdef __cplusplus
 }
 #endif

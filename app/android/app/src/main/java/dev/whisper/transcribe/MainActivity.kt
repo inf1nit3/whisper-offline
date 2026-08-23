@@ -119,7 +119,10 @@ fun App() {
                 if (isStartupLoad) {
                     prefs.edit().remove("model_file").apply()
                 }
-                modelState = "„$displayName“ konnte nicht geladen werden — bitte anderes Modell wählen"
+                val detail = runCatching { WhisperBridge.lastError() }.getOrDefault("")
+                modelState = "„$displayName“ konnte nicht geladen werden" +
+                    if (detail.isNotBlank()) "\n($detail)" else ""
+                modelState += " — bitte anderes Modell wählen"
             }
         }
     }

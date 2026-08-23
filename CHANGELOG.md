@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.9
+
+- Kompatibilität: Die Android-Engine benötigt nicht mehr die CPU-Erweiterung
+  i8mm (erst ab Cortex-A710/X2-Klasse, ~2021) — Baseline ist jetzt
+  armv8.2+dotprod+fp16 und läuft damit auf praktisch allen ARM-Geräten ab
+  ~2018 (u. a. Redmi Note 15 Pro)
+- Konkrete Fehlerursache bei Modell-Ladefehlern in der Meldung (CPU zu alt,
+  Backend fehlt, Datei beschädigt) statt pauschal „Modellfehler"
+
 ## v1.8
 
 - „Datei transkribieren" prüft jetzt vorab den Dateityp: PDFs, Bilder und

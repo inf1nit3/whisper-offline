@@ -53,6 +53,12 @@ Java_dev_whisper_transcribe_WhisperBridge_lastTimings(JNIEnv *env, jobject thiz)
     return (*env)->NewStringUTF(env, we_last_timings());
 }
 
+JNIEXPORT jstring JNICALL
+Java_dev_whisper_transcribe_WhisperBridge_lastError(JNIEnv *env, jobject thiz) {
+    (void) thiz;
+    return (*env)->NewStringUTF(env, we_last_error());
+}
+
 JNIEXPORT jint JNICALL
 Java_dev_whisper_transcribe_WhisperBridge_lastAudioCtx(JNIEnv *env, jobject thiz) {
     (void) env; (void) thiz;

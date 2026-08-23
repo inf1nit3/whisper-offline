@@ -31,6 +31,9 @@ object WhisperBridge {
     /// mel/encode/decode/prompt-Aufschlüsselung des letzten Laufs aus whisper.cpp.
     external fun lastTimings(): String
 
+    /// Konkrete Ursache des letzten Ladefehlers; leer, wenn kein Fehler.
+    external fun lastError(): String
+
     /// [shortCtx] kürzt das 30-s-Encoder-Fenster auf die tatsächliche Audiolänge.
     external fun transcribe(samples: FloatArray, language: String, shortCtx: Boolean): String
 }

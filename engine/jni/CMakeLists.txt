@@ -13,13 +13,14 @@ set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 # ARM-Erweiterungen des Zielgeräts fest einkompilieren. Ohne das baut der NDK
-# auf der armv8-a-Baseline — ohne dotprod, i8mm und fp16-Arithmetik laufen die
+# auf der armv8-a-Baseline — ohne dotprod und fp16-Arithmetik laufen die
 # quantisierten Matmuls um ein Vielfaches langsamer.
-# Preis: setzt Cortex-A710/X2-Klasse voraus (ab ~2021). whisper_jni.c prüft das
-# beim Laden über HWCAP2 und meldet sauber statt mit SIGILL abzustürzen.
+# Baseline armv8.2+dotprod+fp16: läuft auf Cortex-A75/A55-Klasse und neuer
+# (~2018, z. B. auch Redmi-Note-Geräte ohne i8mm). whisper_engine.c prüft
+# dotprod beim Laden über HWCAP und meldet sauber statt mit SIGILL abzustürzen.
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 if (ANDROID_ABI STREQUAL "arm64-v8a")
-    set(GGML_CPU_ARM_ARCH "armv8.6-a+dotprod+i8mm+fp16" CACHE STRING "" FORCE)
+    set(GGML_CPU_ARM_ARCH "armv8.2-a+dotprod+fp16" CACHE STRING "" FORCE)
 endif()
 # GPU-Beschleunigung über Vulkan (Android-GPUs); fällt automatisch auf CPU
 # zurück, wenn das Gerät kein Vulkan bereitstellt.
