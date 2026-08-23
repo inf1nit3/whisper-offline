@@ -45,9 +45,6 @@
                               Click="OnAutostartChanged" />
                     <CheckBox x:Name="StartMinimizedBox" Content="Minimiert starten"
                               Click="OnStartMinimizedChanged" />
-                    <CheckBox x:Name="ShortCtxBox" Content="Kurzes Audio beschleunigen"
-                              Click="OnShortCtxChanged"
-                              ToolTip.Tip="Kürzt das Encoder-Fenster auf die Audiolänge. Experimentell — kann die Qualität kosten." />
                 </StackPanel>
                 <TextBlock Text="Das Fenster schließen legt die App in den Infobereich. Der Hotkey wirkt überall."
                            FontSize="12" Foreground="Gray" TextWrapping="Wrap" />

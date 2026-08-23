@@ -56,7 +56,6 @@ public partial class MainWindow : Window
 
         AutostartBox.IsChecked = settings.Autostart;
         StartMinimizedBox.IsChecked = settings.StartMinimized;
-        ShortCtxBox.IsChecked = settings.ShortCtx;
         UpdateHotkeyLabel();
         suppressSettingsEvents = false;
 
@@ -124,16 +123,15 @@ public partial class MainWindow : Window
     private void UpdateEngineLabel()
     {
         EngineLabel.Text = engineWarm
-            ? $"Engine geladen im Hintergrund · {WhisperNative.BackendInfo}"
+            ? "Bereit für Diktate und Transkription"
             : WhisperNative.Available
-                ? "Engine noch nicht geladen"
+                ? "Engine wird im Hintergrund geladen…"
                 : "whisper_shim.dll nicht gefunden — Rückfall auf whisper-cli (langsamer)";
 
-        // Parakeet: mehrsprachig, kein festes Encoder-Fenster — beide
-        // Bedienelemente hätten dort keine Wirkung.
+        // Parakeet: mehrsprachig, kein festes Encoder-Fenster — die
+        // Sprachauswahl hätte dort keine Wirkung.
         var parakeet = engineWarm && WhisperNative.IsParakeet;
         LanguageBox.IsEnabled = !parakeet;
-        ShortCtxBox.IsEnabled = !parakeet;
         if (parakeet) EngineLabel.Text += " · mehrsprachig, ohne Sprachauswahl";
     }
 
@@ -227,13 +225,6 @@ public partial class MainWindow : Window
     {
         if (suppressSettingsEvents) return;
         settings.StartMinimized = StartMinimizedBox.IsChecked == true;
-        settings.Save();
-    }
-
-    private void OnShortCtxChanged(object? sender, RoutedEventArgs e)
-    {
-        if (suppressSettingsEvents) return;
-        settings.ShortCtx = ShortCtxBox.IsChecked == true;
         settings.Save();
     }
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5
+
+- Test- und Messanzeigen aus der Oberfläche entfernt:
+  Android Timing-Aufschlüsselung und Backend-Info, Windows ShortCtx-Testschalter
+  und Engine-Diagnosetext — die Apps zeigen jetzt nur noch nutzerelevante Infos
+
 ## v1.4
 
 - Teilen-Button für das Transkript:

@@ -63,7 +63,6 @@ fun App() {
     var busy by remember { mutableStateOf(false) }
     var transcript by remember { mutableStateOf("") }
     var durationS by remember { mutableStateOf(0f) }
-    var elapsedS by remember { mutableStateOf(0f) }
     var language by remember { mutableStateOf(Settings.language(context)) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var showHistory by remember { mutableStateOf(false) }
@@ -71,11 +70,8 @@ fun App() {
     var showChangelog by remember { mutableStateOf(false) }
     var changelogText by remember { mutableStateOf("") }
     var useGpu by remember { mutableStateOf(Settings.useGpu(context)) }
-    var backendInfo by remember { mutableStateOf("") }
     val gpuAvailable = remember { WhisperBridge.hasGpuBackend() }
     var shortCtx by remember { mutableStateOf(Settings.shortCtx(context)) }
-    var audioCtx by remember { mutableStateOf(0) }
-    var timings by remember { mutableStateOf("") }
     // Parakeet ist mehrsprachig und hat kein festes Encoder-Fenster — beide
     // Bedienelemente wären dort wirkungslos und werden ausgeblendet.
     var isParakeet by remember { mutableStateOf(false) }
@@ -112,7 +108,6 @@ fun App() {
             modelReady = ok
             modelFile = fileName
             prefs.edit().putString("model_file", fileName).apply()
-            backendInfo = if (ok) WhisperBridge.backendInfo() else ""
             isParakeet = ok && WhisperBridge.engineKind() == WhisperBridge.ENGINE_PARAKEET
             modelState = if (ok) "$displayName bereit" else "Modellfehler"
         }
@@ -256,9 +251,6 @@ fun App() {
                     val text = withContext(Dispatchers.Default) {
                         WhisperBridge.transcribe(samples, language, shortCtx)
                     }
-                    elapsedS = (System.currentTimeMillis() - t0) / 1000f
-                    audioCtx = WhisperBridge.lastAudioCtx()
-                    timings = WhisperBridge.lastTimings()
                     transcript = text.trim()
                     if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
                     statusMessage = null
@@ -392,13 +384,6 @@ fun App() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(modelState, style = MaterialTheme.typography.bodySmall)
-                if (backendInfo.isNotEmpty()) {
-                    Text(
-                        backendInfo,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
                 Spacer(Modifier.height(12.dp))
 
                 var langExpanded by remember { mutableStateOf(false) }
@@ -493,9 +478,6 @@ fun App() {
                                 val text = withContext(Dispatchers.Default) {
                                     WhisperBridge.transcribe(samples, language, shortCtx)
                                 }
-                                elapsedS = (System.currentTimeMillis() - t0) / 1000f
-                                audioCtx = WhisperBridge.lastAudioCtx()
-                                timings = WhisperBridge.lastTimings()
                                 transcript = text.trim()
                                 if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
                                 statusMessage = null
@@ -532,38 +514,6 @@ fun App() {
                 statusMessage?.let {
                     Spacer(Modifier.height(12.dp))
                     Text(it, style = MaterialTheme.typography.bodyMedium)
-                }
-
-                if (durationS > 0 && !recording) {
-                    Text(
-                        "Audio: %.1f s  ·  Dauer: %.1f s  ·  Fenster: %d".format(
-                            durationS, elapsedS, audioCtx
-                        ),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-
-                // Aufschlüsselung direkt aus whisper.cpp: mel, encode, decode,
-                // prompt — plus die fallbacks-Zeile, die anzeigt, ob der Decoder
-                // mit höherer Temperatur neu angesetzt hat.
-                if (timings.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Surface(
-                        Modifier.fillMaxWidth(),
-                        tonalElevation = 1.dp,
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Text(
-                            timings.trim()
-                                .lineSequence()
-                                .map { it.removePrefix("whisper_print_timings:").trim() }
-                                .filter { it.isNotEmpty() && !it.startsWith("load time") }
-                                .joinToString("\n"),
-                            Modifier.padding(8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        )
-                    }
                 }
 
                 Spacer(Modifier.height(16.dp))
