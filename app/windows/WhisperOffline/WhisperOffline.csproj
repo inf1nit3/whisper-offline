@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>WhisperOffline</RootNamespace>
     <AssemblyName>WhisperOffline</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
@@ -19,6 +19,11 @@
     <!-- Autostart über den Run-Schlüssel des Benutzers. Als Paket statt über ein
          -windows-Zielframework, damit der Cross-Build von macOS aus weiter geht. -->
     <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
+  </ItemGroup>
+
+  <!-- CHANGELOG.md aus dem Repo-Root einbetten (In-App-Changelog, offline) -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\CHANGELOG.md" Link="CHANGELOG.md" />
   </ItemGroup>
 
 </Project>

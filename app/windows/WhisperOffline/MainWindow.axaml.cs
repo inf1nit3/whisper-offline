@@ -558,8 +558,66 @@ public partial class MainWindow : Window
 
     private async void OnCheckUpdate(object? sender, RoutedEventArgs e)
     {
-        if (pendingUpdate != null) { await ApplyUpdateAsync(pendingUpdate); return; }
+        if (pendingUpdate != null) { ShowUpdatePanel(pendingUpdate); return; }
         await CheckUpdateAsync(silent: false);
+    }
+
+    /// Update-Panel mit den Release-Notes anzeigen; Installation erst auf Klick.
+    private void ShowUpdatePanel(GhRelease release)
+    {
+        UpdateTitle.Text = $"Update auf {release.Tag}";
+        UpdateNotes.Text = release.Body.Trim();
+        UpdateInstallButton.IsEnabled = release.ZipUrl != null;
+        UpdatePanel.IsVisible = true;
+        MainPanel.IsVisible = false;
+        ChangelogPanel.IsVisible = false;
+    }
+
+    private void OnUpdateCancel(object? sender, RoutedEventArgs e)
+    {
+        UpdatePanel.IsVisible = false;
+        MainPanel.IsVisible = true;
+    }
+
+    private async void OnUpdateInstall(object? sender, RoutedEventArgs e)
+    {
+        if (pendingUpdate == null || updateBusy) return;
+        UpdateInstallButton.IsEnabled = false;
+        await ApplyUpdateAsync(pendingUpdate);
+        UpdateInstallButton.IsEnabled = true;
+    }
+
+    // ---------- Changelog (eingebettete CHANGELOG.md) ----------
+
+    private void OnOpenChangelog(object? sender, RoutedEventArgs e)
+    {
+        ChangelogText.Text = LoadChangelog();
+        ChangelogPanel.IsVisible = true;
+        MainPanel.IsVisible = false;
+        UpdatePanel.IsVisible = false;
+    }
+
+    private void OnChangelogClose(object? sender, RoutedEventArgs e)
+    {
+        ChangelogPanel.IsVisible = false;
+        MainPanel.IsVisible = true;
+    }
+
+    private static string LoadChangelog()
+    {
+        try
+        {
+            var asm = typeof(MainWindow).Assembly;
+            var name = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("CHANGELOG.md"));
+            if (name == null) return "Changelog nicht gefunden.";
+            using var stream = asm.GetManifestResourceStream(name)!;
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd().Trim();
+        }
+        catch
+        {
+            return "Changelog nicht gefunden.";
+        }
     }
 
     private async Task ApplyUpdateAsync(GhRelease release)

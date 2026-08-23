@@ -68,6 +68,8 @@ fun App() {
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var showHistory by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(listOf<HistoryEntry>()) }
+    var showChangelog by remember { mutableStateOf(false) }
+    var changelogText by remember { mutableStateOf("") }
     var useGpu by remember { mutableStateOf(Settings.useGpu(context)) }
     var backendInfo by remember { mutableStateOf("") }
     val gpuAvailable = remember { WhisperBridge.hasGpuBackend() }
@@ -259,6 +261,31 @@ fun App() {
         }
     }
 
+    // Offline-Changelog aus den Assets (CHANGELOG.md wird beim Build synchronisiert)
+    if (showChangelog) {
+        AlertDialog(
+            onDismissRequest = { showChangelog = false },
+            title = { Text("Changelog") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    changelogText.split("\n\n").forEach { block ->
+                        val isHeading = block.trimStart().startsWith("##")
+                        Text(
+                            block.trim(),
+                            style = if (isHeading) MaterialTheme.typography.titleSmall
+                            else MaterialTheme.typography.bodySmall,
+                            fontWeight = if (isHeading) FontWeight.Bold else null,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showChangelog = false }) { Text("Schließen") }
+            }
+        )
+    }
+
     // Update-Dialog: neue Version mit Notes + Download, oder Statusmeldung
     val shownRelease = updateRelease
     if (shownRelease != null) {
@@ -267,6 +294,9 @@ fun App() {
             title = { Text("Update verfügbar — ${shownRelease.tag}") },
             text = {
                 Column {
+                    Text("Änderungen in ${shownRelease.tag}:",
+                        style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.height(6.dp))
                     Text(shownRelease.body.ifBlank { "Neue Version ${shownRelease.tag}." },
                         maxLines = 12, overflow = TextOverflow.Ellipsis)
                     if (updateBusy) {
@@ -312,6 +342,21 @@ fun App() {
             TopAppBar(
                 title = { Text("Scheisssewasser's Whisper") },
                 actions = {
+                    IconButton(onClick = {
+                        if (changelogText.isEmpty()) {
+                            scope.launch {
+                                changelogText = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        context.assets.open("CHANGELOG.md")
+                                            .bufferedReader().use { it.readText() }
+                                    }.getOrDefault("Changelog nicht gefunden.")
+                                }
+                            }
+                        }
+                        showChangelog = true
+                    }) {
+                        Icon(Icons.Filled.MenuBook, "Changelog")
+                    }
                     IconButton(onClick = { checkForUpdate(silent = false) }) {
                         Icon(Icons.Filled.SystemUpdate, "Updates")
                     }

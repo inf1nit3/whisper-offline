@@ -15,8 +15,8 @@ android {
         // Nur mit -DGGML_VULKAN=ON muss hier 28 stehen (vkGetPhysicalDeviceFeatures2).
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
         ndk {
             // Standard: nur Geräte-ABI (schlanke APK). Für Emulator/Universal:
             // ./gradlew assembleDebug -Pabis=arm64-v8a,x86_64
@@ -52,3 +52,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
     implementation("androidx.core:core-ktx:1.17.0")
 }
+
+/// CHANGELOG.md aus dem Repo-Root bei jedem Build ins Asset-Verzeichnis
+/// synchronisieren — der In-App-Changelog kann so nie einen Stand verpassen.
+tasks.register<Copy>("syncChangelog") {
+    from(rootProject.file("../../CHANGELOG.md"))
+    into("src/main/assets")
+}
+tasks.named("preBuild") { dependsOn("syncChangelog") }
