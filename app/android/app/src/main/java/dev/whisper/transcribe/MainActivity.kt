@@ -95,7 +95,10 @@ fun App() {
 
     val recorder = remember { AudioRecorder() }
 
-    fun loadModel(fileName: String, displayName: String = fileName) {
+    /// Lädt ein Modell. Wird nur bei Erfolg als aktives Modell gespeichert —
+    /// ein Fehlschlag (z. B. Parakeet, das die Android-Engine nicht kennt)
+    /// vergiftet die Startauswahl sonst dauerhaft.
+    fun loadModel(fileName: String, displayName: String = fileName, isStartupLoad: Boolean = false) {
         modelState = "Lade $displayName…"
         modelReady = false
         scope.launch {
@@ -105,10 +108,19 @@ fun App() {
                 )
             }
             modelReady = ok
-            modelFile = fileName
-            prefs.edit().putString("model_file", fileName).apply()
-            isParakeet = ok && WhisperBridge.engineKind() == WhisperBridge.ENGINE_PARAKEET
-            modelState = if (ok) "$displayName bereit" else "Modellfehler"
+            if (ok) {
+                modelFile = fileName
+                prefs.edit().putString("model_file", fileName).apply()
+                isParakeet = WhisperBridge.engineKind() == WhisperBridge.ENGINE_PARAKEET
+                modelState = "$displayName bereit"
+            } else {
+                // Beim Start: tote Referenz entfernen, damit der nächste Start
+                // sauber ist; manuell gewählte Fehlschläge lassen alles unverändert.
+                if (isStartupLoad) {
+                    prefs.edit().remove("model_file").apply()
+                }
+                modelState = "„$displayName“ konnte nicht geladen werden — bitte anderes Modell wählen"
+            }
         }
     }
 
@@ -149,11 +161,15 @@ fun App() {
 
     fun proceedAfterOnboarding() {
         val stored = prefs.getString("model_file", null)
-        val exists = stored != null && File(ModelRegistry.modelsDir(context), stored).exists()
-        if (exists) {
-            loadModel(stored!!)
-        } else {
-            pickerVisible = true
+        val storedFile = stored?.let { File(ModelRegistry.modelsDir(context), it) }
+        when {
+            storedFile != null && storedFile.exists() -> loadModel(stored!!, isStartupLoad = true)
+            stored != null -> {
+                // Referenz ohne Datei: einmal aufräumen und Auswahl zeigen
+                prefs.edit().remove("model_file").apply()
+                pickerVisible = true
+            }
+            else -> pickerVisible = true
         }
         refreshManifest()
     }
@@ -575,6 +591,20 @@ fun App() {
                 )
             }
 
+            // Zurück-Taste schließt Overlays statt die App zu beenden
+            val pickerHasLocalModels = remember(modelFile) {
+                ModelRegistry.localModelFiles(context).isNotEmpty()
+            }
+            androidx.activity.compose.BackHandler(
+                enabled = pickerVisible || showHistory || showChangelog
+            ) {
+                when {
+                    showHistory -> showHistory = false
+                    showChangelog -> showChangelog = false
+                    pickerVisible && pickerHasLocalModels -> pickerVisible = false
+                }
+            }
+
             if (pickerVisible) {
                 ModelPickerOverlay(
                     manifest = manifest,
@@ -588,7 +618,8 @@ fun App() {
                     onDownload = { startDownload(it) },
                     onActivate = { loadModel(it); pickerVisible = false },
                     onDelete = { confirmDeleteModel = it },
-                    onDismissIfModelReady = { if (modelReady) pickerVisible = false },
+                    dismissEnabled = ModelRegistry.localModelFiles(context).isNotEmpty(),
+                    onDismiss = { pickerVisible = false },
                 )
             }
 
@@ -702,7 +733,8 @@ fun ModelPickerOverlay(
     onDownload: (ModelInfo) -> Unit,
     onActivate: (String) -> Unit,
     onDelete: (String) -> Unit,
-    onDismissIfModelReady: () -> Unit,
+    dismissEnabled: Boolean,
+    onDismiss: () -> Unit,
 ) {
     Surface(
         Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface
@@ -725,8 +757,8 @@ fun ModelPickerOverlay(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
-                if (currentFile != null) {
-                    TextButton(onClick = onDismissIfModelReady) { Text("Schließen") }
+                if (dismissEnabled) {
+                    TextButton(onClick = onDismiss) { Text("Schließen") }
                 }
             }
             Spacer(Modifier.height(16.dp))

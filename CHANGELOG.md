@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.7
+
+- Fehlerbehebung „Modellfehler" beim Start: Die App speichert ein Modell nur
+  noch bei erfolgreichem Laden — das Aktivieren eines nicht ladefähigen Modells
+  (z. B. Parakeet) vergiftet die Startauswahl nicht mehr dauerhaft
+- Die Modell-Auswahl lässt sich jetzt schließen, sobald lokal Modelle vorhanden
+  sind — auch wenn der letzte Ladeversuch fehlschlug (keine Sackgasse mehr)
+- Android-Zurück-Taste schließt Modell-Auswahl, Verlauf und Changelog statt
+  die App sofort zu beenden
+- Tote Modell-Referenzen (Datei gelöscht) werden beim Start aufgeräumt
+
 ## v1.6
 
 - Android: Schalter „Kurzes Audio beschleunigen" entfernt — Messung zeigte
