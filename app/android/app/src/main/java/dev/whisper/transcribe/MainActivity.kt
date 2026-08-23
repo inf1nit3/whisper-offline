@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
@@ -166,6 +167,62 @@ fun App() {
         )
     }
 
+    // ---- In-App-Update (GitHub Releases) ----
+    var updateRelease by remember { mutableStateOf<UpdateChecker.Release?>(null) }
+    var updateChecked by remember { mutableStateOf(false) }
+    var updateBusy by remember { mutableStateOf(false) }
+    var updateProgress by remember { mutableStateOf(0f) }
+    var updateMessage by remember { mutableStateOf<String?>(null) }
+
+    fun checkForUpdate(silent: Boolean) {
+        scope.launch {
+            val release = withContext(Dispatchers.IO) { UpdateChecker.fetchLatest() }
+            updateChecked = true
+            if (release == null) {
+                if (!silent) updateMessage = "GitHub nicht erreichbar"
+                return@launch
+            }
+            val current = UpdateChecker.currentVersion(context)
+            if (UpdateChecker.isNewer(current, release.tag)) {
+                updateRelease = release
+            } else if (!silent) {
+                updateMessage = "Version $current ist aktuell"
+            }
+        }
+    }
+
+    fun startUpdateDownload(release: UpdateChecker.Release) {
+        val url = release.apkUrl ?: run {
+            updateMessage = "Release enthält keine APK"
+            return
+        }
+        updateBusy = true
+        updateProgress = 0f
+        updateMessage = null
+        scope.launch {
+            try {
+                val apk = withContext(Dispatchers.IO) {
+                    ApkInstaller.downloadApk(context, url) { done, total ->
+                        if (total > 0) updateProgress = done.toFloat() / total
+                    }
+                }
+                val ok = ApkInstaller.startInstall(context, apk)
+                if (!ok) {
+                    updateMessage =
+                        "Installation blockiert: erlaube „Unbekannte Apps\" in den Einstellungen — Button öffnet sie"
+                    ApkInstaller.openInstallPermissionSettings(context)
+                }
+            } catch (e: Exception) {
+                updateMessage = "Download fehlgeschlagen: ${e.message}"
+            } finally {
+                updateBusy = false
+            }
+        }
+    }
+
+    // Update-Check beim Start (still); Dialog erscheint nur bei neuerer Version
+    LaunchedEffect(Unit) { checkForUpdate(silent = true) }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasAudioPermission = granted }
@@ -202,11 +259,62 @@ fun App() {
         }
     }
 
+    // Update-Dialog: neue Version mit Notes + Download, oder Statusmeldung
+    val shownRelease = updateRelease
+    if (shownRelease != null) {
+        AlertDialog(
+            onDismissRequest = { if (!updateBusy) updateRelease = null },
+            title = { Text("Update verfügbar — ${shownRelease.tag}") },
+            text = {
+                Column {
+                    Text(shownRelease.body.ifBlank { "Neue Version ${shownRelease.tag}." },
+                        maxLines = 12, overflow = TextOverflow.Ellipsis)
+                    if (updateBusy) {
+                        Spacer(Modifier.height(12.dp))
+                        LinearProgressIndicator(
+                            progress = { updateProgress }, Modifier.fillMaxWidth()
+                        )
+                        Text("%.0f %%".format(updateProgress * 100),
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    updateMessage?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                if (!updateBusy) {
+                    TextButton(onClick = { startUpdateDownload(shownRelease) }) {
+                        Text("Herunterladen & Installieren")
+                    }
+                }
+            },
+            dismissButton = {
+                if (!updateBusy) {
+                    TextButton(onClick = { updateRelease = null }) { Text("Später") }
+                }
+            }
+        )
+    } else if (updateMessage != null && updateChecked) {
+        AlertDialog(
+            onDismissRequest = { updateMessage = null },
+            title = { Text("Updates") },
+            text = { Text(updateMessage ?: "") },
+            confirmButton = {
+                TextButton(onClick = { updateMessage = null }) { Text("OK") }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Scheisssewasser's Whisper") },
                 actions = {
+                    IconButton(onClick = { checkForUpdate(silent = false) }) {
+                        Icon(Icons.Filled.SystemUpdate, "Updates")
+                    }
                     IconButton(onClick = {
                         history = HistoryStore.load(context)
                         showHistory = true

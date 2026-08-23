@@ -18,6 +18,8 @@
                 </ComboBox>
                 <Button Content="&#59256;  Modell wechseln" Click="OnOpenModelPicker" Margin="8,0,0,0" />
                 <Button Content="&#128218;  Verlauf" Click="OnOpenHistory" Margin="8,0,0,0" />
+                <Button x:Name="UpdateButton" Content="&#11014;  Update" Click="OnCheckUpdate"
+                        Margin="8,0,0,0" IsVisible="False" />
                 <TextBlock x:Name="ModelLabel" Text="" VerticalAlignment="Center"
                            Foreground="Gray" FontSize="12" Margin="8,0,0,0" TextWrapping="Wrap" />
             </StackPanel>

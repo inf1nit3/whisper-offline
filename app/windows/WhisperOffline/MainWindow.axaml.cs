@@ -90,7 +90,7 @@ public partial class MainWindow : Window
 
         // Modell einmal in die Engine laden, damit der erste Hotkey-Druck nicht
         // auf 180+ MB von der Platte wartet. Läuft im Hintergrund weiter.
-        Opened += (_, _) => _ = WarmUpAsync();
+        Opened += (_, _) => { _ = WarmUpAsync(); _ = CheckUpdateAsync(silent: true); };
         if (Program.StartHidden || settings.StartMinimized)
         {
             // Ohne Fenster starten: nur Infobereich, wartet auf den Hotkey.
@@ -525,6 +525,79 @@ public partial class MainWindow : Window
     private void OnClosePicker(object? sender, RoutedEventArgs e)
     {
         if (File.Exists(WhisperCli.SelectedModel)) ClosePicker();
+    }
+
+    // ---------- In-App-Update (GitHub Releases) ----------
+
+    private GhRelease? pendingUpdate;
+    private bool updateBusy = false;
+
+    private async Task CheckUpdateAsync(bool silent)
+    {
+        if (updateBusy) return;
+        var release = await Task.Run(() => UpdateChecker.FetchLatest());
+        if (release == null)
+        {
+            if (!silent) StatusLabel.Text = "GitHub nicht erreichbar.";
+            return;
+        }
+        var current = UpdateChecker.CurrentVersion();
+        if (UpdateChecker.IsNewer(current, release.Tag))
+        {
+            pendingUpdate = release;
+            UpdateButton.Content = $"⬆  Update auf {release.Tag}";
+            UpdateButton.IsVisible = true;
+            if (!silent)
+                StatusLabel.Text = $"Update verfügbar: {release.Tag} (installiert: {current})";
+        }
+        else if (!silent)
+        {
+            StatusLabel.Text = $"Version {current} ist aktuell.";
+        }
+    }
+
+    private async void OnCheckUpdate(object? sender, RoutedEventArgs e)
+    {
+        if (pendingUpdate != null) { await ApplyUpdateAsync(pendingUpdate); return; }
+        await CheckUpdateAsync(silent: false);
+    }
+
+    private async Task ApplyUpdateAsync(GhRelease release)
+    {
+        if (release.ZipUrl == null)
+        {
+            StatusLabel.Text = "Release enthält kein Zip-Paket.";
+            return;
+        }
+        updateBusy = true;
+        UpdateButton.IsEnabled = false;
+        try
+        {
+            StatusLabel.Text = $"Lade {release.Tag} herunter…";
+            double last = -1;
+            var progress = new Progress<double>(v =>
+            {
+                if (v - last > 0.04)
+                {
+                    last = v;
+                    StatusLabel.Text = $"Lade {release.Tag} herunter… {v * 100:F0} %";
+                }
+            });
+            var srcDir = await Task.Run(() => SelfUpdater.DownloadAndExtractAsync(release.ZipUrl, progress));
+            StatusLabel.Text = "Installation wird angewendet — App startet neu…";
+            SelfUpdater.LaunchUpdater(srcDir);
+            await Task.Delay(400); // Skript-Start abwarten
+            allowClose = true;
+            tray?.Dispose();
+            Close();
+            (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            StatusLabel.Text = "Update fehlgeschlagen: " + ex.Message;
+            UpdateButton.IsEnabled = true;
+            updateBusy = false;
+        }
     }
 
     // ---------- Transkription ----------
