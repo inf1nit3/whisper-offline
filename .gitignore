@@ -35,3 +35,6 @@ tools/vk-install/
 tools/spirv-install/
 tools/spirv-build/
 tools/vkh-build/
+
+# Release-Signierung (niemals committen)
+keystore/

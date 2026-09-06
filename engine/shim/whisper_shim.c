@@ -77,6 +77,7 @@ WS_API void ws_string_free(char *s) {
 WS_API const char *ws_backend_info(void) { return we_backend_info(); }
 WS_API const char *ws_last_timings(void) { return we_last_timings(); }
 WS_API int ws_last_audio_ctx(void)       { return we_last_audio_ctx(); }
+WS_API const char *ws_last_error(void)   { return we_last_error(); }
 WS_API int ws_threads(void)              { return we_threads(); }
 
 /// 0 = keins, 1 = Whisper, 2 = Parakeet.

@@ -1,6 +1,23 @@
 {
   "models": [
     {
+      "file": "ggml-parakeet-tdt-0.6b-v3-q8_0.bin",
+      "label": "Parakeet v3 — Schnellster",
+      "tagline": "NVIDIA Parakeet: höchste Geschwindigkeit, mehrsprachig",
+      "size": 668757119,
+      "sha256": "4d64e9e96c2792186d072fde0034df0ad670cf680a2f53069052ead827fd600e",
+      "pros": [
+        "Schnellste Transkription bei sehr hoher Genauigkeit (TDT-Architektur)",
+        "Mehrsprachig (u. a. Deutsch und Englisch) ohne Spracherkennungs-Doppellauf",
+        "Robustes Satzzeichen- und Großschreibverhalten"
+      ],
+      "cons": [
+        "Großer Download (638 MB) und hoher RAM-Bedarf (~1,5 GB freien Speicher empfohlen)",
+        "Benötigt App-Version 1.9 oder neuer",
+        "Kein Übersetzungsmodus, Sprachauswahl unwirksam (mehrsprachig by design)"
+      ]
+    },
+    {
       "file": "ggml-tiny-q5_1.bin",
       "label": "Whisper tiny — Blitz",
       "tagline": "Sofort-Diktat, minimale Genauigkeit",

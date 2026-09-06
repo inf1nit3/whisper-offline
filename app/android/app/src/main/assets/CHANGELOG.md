@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.0
+
+- Parakeet v3 ist wieder im Modell-Angebot: die schnellste Engine (jetzt mit der
+  gemeinsamen Engine-Grundlage auf Android und Windows getestet) — 638 MB,
+  braucht App 1.9+ und ca. 1,5 GB freien RAM
+- Android: Release-APKs sind jetzt mit eigenem Keystore signiert
+  ⚠️ Einmalige Neuinstallation nötig: alte App deinstallieren (Modelle werden
+  dabei gelöscht und müssen einmal neu geladen werden), dann APK neu installieren.
+  Alle künftigen Updates funktionieren danach wieder direkt aus der App.
+
 ## v1.9
 
 - Kompatibilität: Die Android-Engine benötigt nicht mehr die CPU-Erweiterung
