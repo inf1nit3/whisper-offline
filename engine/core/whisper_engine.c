@@ -5,6 +5,7 @@
 #include <ggml-backend.h>
 #include <ctype.h>
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +36,60 @@ static char g_backend[64] = {0};
 /// Konkrete Ursache des letzten Ladefehlers, leer wenn kein Fehler.
 static char g_err[256] = {0};
 const char *we_last_error(void) { return g_err; }
+
+// ---------------------------------------------------------------------------
+// Fortschritt und Abbruch
+// ---------------------------------------------------------------------------
+// Beides wird aus einem zweiten Thread gelesen bzw. gesetzt, während
+// we_transcribe rechnet — die Plattform-Wrapper sperren die Transkription,
+// diese beiden Werte aber bewusst nicht.
+static atomic_int  g_progress  = 0;
+static atomic_bool g_abort     = false;
+static atomic_bool g_cancelled = false;
+
+int  we_progress(void)      { return atomic_load(&g_progress); }
+void we_cancel(void)        { atomic_store(&g_abort, true); }
+bool we_was_cancelled(void) { return atomic_load(&g_cancelled); }
+
+static void whisper_progress_cb(struct whisper_context *ctx, struct whisper_state *state,
+                                int progress, void *user_data) {
+    (void) ctx; (void) state; (void) user_data;
+    atomic_store(&g_progress, progress);
+}
+
+static void parakeet_progress_cb(struct parakeet_context *ctx, struct parakeet_state *state,
+                                 int progress, void *user_data) {
+    (void) ctx; (void) state; (void) user_data;
+    atomic_store(&g_progress, progress);
+}
+
+/// ggml fragt das während der Graph-Berechnung regelmäßig ab.
+static bool abort_cb(void *user_data) {
+    (void) user_data;
+    return atomic_load(&g_abort);
+}
+
+/// Whisper prüft zusätzlich vor jedem Encoder-Lauf.
+static bool whisper_encoder_begin_cb(struct whisper_context *ctx, struct whisper_state *state,
+                                     void *user_data) {
+    (void) ctx; (void) state; (void) user_data;
+    return !atomic_load(&g_abort);
+}
+
+static void begin_run(void) {
+    atomic_store(&g_progress, 0);
+    atomic_store(&g_abort, false);
+    atomic_store(&g_cancelled, false);
+}
+
+/// Abgebrochen gilt nur, wer auch abbrechen wollte — ein Fehler bleibt ein Fehler.
+/// Der Fortschritt fällt auf 0 zurück: Die Oberfläche fragt schon ab, während
+/// sie noch auf die Sperre wartet, und sähe sonst die 100 des Vorgängers.
+static void end_run(int rc) {
+    if (rc != 0 && atomic_load(&g_abort)) atomic_store(&g_cancelled, true);
+    atomic_store(&g_progress, 0);
+    atomic_store(&g_abort, false);
+}
 
 // ---------------------------------------------------------------------------
 // Log
@@ -364,11 +419,14 @@ static char *transcribe_parakeet(const float *samples, int n_samples) {
     struct parakeet_full_params p = parakeet_full_default_params(PARAKEET_SAMPLING_GREEDY);
     p.n_threads = we_threads();
     p.no_context = true;
+    p.progress_callback = parakeet_progress_cb;
+    p.abort_callback = abort_cb;
 
     g_last_audio_ctx = 0; // kein festes Fenster
 
     parakeet_reset_timings(g_pk);
     const int rc = parakeet_full(g_pk, p, samples, n_samples);
+    end_run(rc);
 
     g_log_len = 0;
     g_log[0] = '\0';
@@ -382,6 +440,7 @@ static char *transcribe_parakeet(const float *samples, int n_samples) {
 
 char *we_transcribe(const float *samples, int n_samples, const char *lang, bool short_ctx) {
     if (!we_is_loaded() || samples == NULL || n_samples <= 0) return NULL;
+    begin_run();
     if (g_kind == WE_ENGINE_PARAKEET) return transcribe_parakeet(samples, n_samples);
     if (lang == NULL) lang = "de";
 
@@ -398,6 +457,9 @@ char *we_transcribe(const float *samples, int n_samples, const char *lang, bool 
     p.print_timestamps = false;
     p.suppress_nst = true;
     p.no_context = true;
+    p.progress_callback = whisper_progress_cb;
+    p.encoder_begin_callback = whisper_encoder_begin_cb;
+    p.abort_callback = abort_cb;
 
     // Passt das Audio in ein 30-s-Fenster, dann in einem Rutsch durchziehen.
     // Sonst kann whisper.cpp das Segment am Zeitstempel des letzten Tokens
@@ -411,6 +473,7 @@ char *we_transcribe(const float *samples, int n_samples, const char *lang, bool 
 
     whisper_reset_timings(g_ctx);
     const int rc = whisper_full(g_ctx, p, samples, n_samples);
+    end_run(rc);
 
     g_log_len = 0;
     g_log[0] = '\0';

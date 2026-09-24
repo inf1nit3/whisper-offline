@@ -84,6 +84,25 @@ Java_dev_whisper_transcribe_WhisperBridge_detectThreads(JNIEnv *env, jobject thi
     return (jint) we_threads();
 }
 
+/// Prozent 0–100 der laufenden Transkription; lock-frei aus dem UI-Thread abfragbar.
+JNIEXPORT jint JNICALL
+Java_dev_whisper_transcribe_WhisperBridge_progress(JNIEnv *env, jobject thiz) {
+    (void) env; (void) thiz;
+    return (jint) we_progress();
+}
+
+JNIEXPORT void JNICALL
+Java_dev_whisper_transcribe_WhisperBridge_cancel(JNIEnv *env, jobject thiz) {
+    (void) env; (void) thiz;
+    we_cancel();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_dev_whisper_transcribe_WhisperBridge_wasCancelled(JNIEnv *env, jobject thiz) {
+    (void) env; (void) thiz;
+    return we_was_cancelled() ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jstring JNICALL
 Java_dev_whisper_transcribe_WhisperBridge_transcribe(JNIEnv *env, jobject thiz,
                                                      jfloatArray jsamples, jstring jlang,

@@ -16,6 +16,10 @@ class AudioRecorder {
 
     val isRecording: Boolean get() = running
 
+    /// Pegel des zuletzt gelesenen Blocks (RMS, grob 0..1) für die Anzeige.
+    @Volatile var level = 0f
+        private set
+
     @SuppressLint("MissingPermission") // Permission wird vor dem Start in der UI angefragt
     fun start(): Boolean {
         if (running) return true
@@ -40,7 +44,10 @@ class AudioRecorder {
             val chunk = ShortArray(2048)
             while (running) {
                 val n = rec.read(chunk, 0, chunk.size)
-                if (n > 0) append(chunk, n)
+                if (n > 0) {
+                    append(chunk, n)
+                    level = rms(chunk, n)
+                }
             }
         }.also { it.start() }
         return true
@@ -58,9 +65,18 @@ class AudioRecorder {
         used += n
     }
 
+    private fun rms(chunk: ShortArray, n: Int): Float {
+        var sum = 0.0
+        for (i in 0 until n) sum += chunk[i].toDouble() * chunk[i]
+        // Sprache liegt meist weit unter Vollaussteuerung — mal 4, damit die
+        // Anzeige sichtbar ausschlägt.
+        return (kotlin.math.sqrt(sum / n) / 32768.0 * 4).toFloat().coerceIn(0f, 1f)
+    }
+
     /// Stoppt die Aufnahme und liefert die Samples normiert auf [-1, 1].
     fun stop(): FloatArray {
         running = false
+        level = 0f
         try { thread?.join(1000) } catch (_: InterruptedException) {}
         thread = null
         record?.let {

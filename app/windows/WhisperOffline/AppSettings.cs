@@ -34,6 +34,10 @@ public sealed class AppSettings
     /// Einführung beim ersten Start; nach dem Durchlauf dauerhaft erledigt.
     public bool OnboardingDone { get; set; } = false;
 
+    /// Gelernte Rechenzeit je Modell (ms pro Aufwandseinheit) für die
+    /// Fortschrittsschätzung, siehe TranscriptionEstimate.
+    public Dictionary<string, double> ProgressCalibration { get; set; } = new();
+
     // -----------------------------------------------------------------------
 
     [JsonIgnore]

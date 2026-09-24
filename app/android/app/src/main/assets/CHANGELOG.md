@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.2
+
+- Fortschrittsanzeige beim Transkribieren: Balken mit Prozent und
+  Restzeit („noch ca. 6 s“). Die App lernt pro Modell, wie schnell dein
+  Gerät rechnet — ab der zweiten Transkription wird die Schätzung genau
+- Transkription lässt sich abbrechen (Android, Diktat-Overlay und Windows)
+- Android: neues Design — Material You (Farben passend zum Hintergrundbild
+  ab Android 12), Dunkelmodus, großer Aufnahmeknopf mit Pegelanzeige,
+  Modell und Sprache als Chips, Icons statt Emojis, randlose Darstellung
+- Android: Modellauswahl, Verlauf und Einführung neu gestaltet; „Alle
+  löschen“ im Verlauf fragt jetzt vorher nach
+- Android: Diktat-Overlay ohne leeren Rahmen dahinter, mit Pegel und
+  Fortschritt
+
 ## v2.1
 
 - Android: Audio aus anderen Apps über „Teilen“ transkribieren — z. B.

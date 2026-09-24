@@ -59,6 +59,20 @@ char *we_transcribe(const float *samples, int n_samples, const char *lang, bool 
 
 void we_string_free(char *s);
 
+/// Fortschritt der laufenden Transkription in Prozent (0–100), außerhalb
+/// eines Laufs 0. Darf aus einem anderen Thread abgefragt werden, während
+/// we_transcribe läuft. Die Engines melden grob: Whisper je 30-s-Fenster, Parakeet nur
+/// Anfang und Ende — feinere Anzeige muss die Oberfläche schätzen.
+int we_progress(void);
+
+/// Bricht die laufende Transkription ab; we_transcribe liefert dann NULL.
+/// Aus einem anderen Thread aufrufbar. Wirkt nur auf den laufenden Durchgang,
+/// der nächste Aufruf von we_transcribe setzt den Wunsch zurück.
+void we_cancel(void);
+
+/// Wurde der letzte Durchgang per we_cancel abgebrochen?
+bool we_was_cancelled(void);
+
 /// Anzahl der großen CPU-Kerne, die die Engine benutzt.
 int we_threads(void);
 

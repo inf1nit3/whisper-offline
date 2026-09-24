@@ -5,32 +5,47 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -47,8 +62,11 @@ class MainActivity : ComponentActivity() {
         Settings.migrate(this)
         // Nach einer Neuerstellung (etwa Dunkelmodus) nicht erneut transkribieren.
         if (savedInstanceState == null) sharedUri.value = incomingUri(intent)
+        enableEdgeToEdge()
         setContent {
-            App(sharedUri = sharedUri.value, onSharedConsumed = { sharedUri.value = null })
+            WhisperTheme {
+                App(sharedUri = sharedUri.value, onSharedConsumed = { sharedUri.value = null })
+            }
         }
     }
 
@@ -77,33 +95,41 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val haptics = LocalHapticFeedback.current
+    val snackbar = remember { SnackbarHostState() }
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
 
-    var modelState by remember { mutableStateOf("Kein Modell geladen") }
+    var modelLoading by remember { mutableStateOf(false) }
+    var modelError by remember { mutableStateOf<String?>(null) }
     var modelFile by remember { mutableStateOf<String?>(null) }
     var modelReady by remember { mutableStateOf(false) }
     var recording by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var work by remember { mutableStateOf<Work?>(null) }
     var transcript by remember { mutableStateOf("") }
-    var durationS by remember { mutableStateOf(0f) }
     var language by remember { mutableStateOf(Settings.language(context)) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var statusIsError by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(listOf<HistoryEntry>()) }
     var showChangelog by remember { mutableStateOf(false) }
     var changelogText by remember { mutableStateOf("") }
     var useGpu by remember { mutableStateOf(Settings.useGpu(context)) }
     val gpuAvailable = remember { WhisperBridge.hasGpuBackend() }
-    // Parakeet ist mehrsprachig und hat kein festes Encoder-Fenster — beide
-    // Bedienelemente wären dort wirkungslos und werden ausgeblendet.
+    // Parakeet ist mehrsprachig — die Sprachauswahl wäre dort wirkungslos.
     var isParakeet by remember { mutableStateOf(false) }
+
+    fun showStatus(message: String?, isError: Boolean = false) {
+        statusMessage = message
+        statusIsError = isError
+    }
 
     fun recordHistory(text: String, audioSeconds: Float) {
         HistoryStore.add(context, HistoryEntry(
             timeMs = System.currentTimeMillis(),
             text = text,
             model = modelFile ?: "",
-            language = language,
+            language = if (isParakeet) "" else language,
             audioSeconds = audioSeconds,
         ))
     }
@@ -121,45 +147,43 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
     // im Hintergrund weiterlaufen.
     DisposableEffect(recorder) { onDispose { if (recorder.isRecording) recorder.stop() } }
 
-    // Laufende Aufnahmezeit unter dem Aufnahme-Knopf
-    var recordingSeconds by remember { mutableStateOf(0) }
+    // Aufnahmezeit und Mikrofonpegel für den Aufnahmeknopf
+    var recordingSeconds by remember { mutableIntStateOf(0) }
+    var micLevel by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(recording) {
         recordingSeconds = 0
-        val t0 = System.currentTimeMillis()
+        micLevel = 0f
+        val t0 = SystemClock.elapsedRealtime()
         while (recording) {
-            recordingSeconds = ((System.currentTimeMillis() - t0) / 1000).toInt()
-            delay(250)
+            recordingSeconds = ((SystemClock.elapsedRealtime() - t0) / 1000).toInt()
+            micLevel = recorder.level
+            delay(60)
         }
     }
 
     /// Lädt ein Modell. Wird nur bei Erfolg als aktives Modell gespeichert —
-    /// ein Fehlschlag (z. B. Parakeet, das die Android-Engine nicht kennt)
-    /// vergiftet die Startauswahl sonst dauerhaft.
-    fun loadModel(fileName: String, displayName: String = fileName, isStartupLoad: Boolean = false) {
-        modelState = "Lade $displayName…"
+    /// ein Fehlschlag vergiftet die Startauswahl sonst dauerhaft.
+    fun loadModel(fileName: String, isStartupLoad: Boolean = false) {
+        modelLoading = true
+        modelError = null
         modelReady = false
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                WhisperBridge.load(
-                    File(ModelRegistry.modelsDir(context), fileName).absolutePath, useGpu
-                )
+                WhisperBridge.load(File(ModelRegistry.modelsDir(context), fileName).absolutePath, useGpu)
             }
+            modelLoading = false
             modelReady = ok
             if (ok) {
                 modelFile = fileName
                 prefs.edit().putString("model_file", fileName).apply()
                 isParakeet = WhisperBridge.engineKind() == WhisperBridge.ENGINE_PARAKEET
-                modelState = "$displayName bereit"
             } else {
                 // Beim Start: tote Referenz entfernen, damit der nächste Start
                 // sauber ist; manuell gewählte Fehlschläge lassen alles unverändert.
-                if (isStartupLoad) {
-                    prefs.edit().remove("model_file").apply()
-                }
+                if (isStartupLoad) prefs.edit().remove("model_file").apply()
                 val detail = runCatching { WhisperBridge.lastError() }.getOrDefault("")
-                modelState = "„$displayName“ konnte nicht geladen werden" +
-                    if (detail.isNotBlank()) "\n($detail)" else ""
-                modelState += " — bitte anderes Modell wählen"
+                modelError = "„${modelDisplayName(fileName, manifest)}“ konnte nicht geladen werden" +
+                    (if (detail.isNotBlank()) " ($detail)" else "") + " — bitte anderes Modell wählen"
             }
         }
     }
@@ -175,7 +199,8 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
                         if (total > 0) downloadProgress = done.toFloat() / total
                     }
                 }
-                loadModel(info.file, info.label)
+                loadModel(info.file)
+                pickerVisible = false
             } catch (e: Exception) {
                 downloadError = e.message ?: "Download fehlgeschlagen"
             } finally {
@@ -186,6 +211,7 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
 
     fun refreshManifest() {
         manifestError = null
+        downloadError = null
         manifest = null
         scope.launch {
             try {
@@ -215,11 +241,8 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
     }
 
     LaunchedEffect(Unit) {
-        if (Settings.onboardingDone(context)) {
-            proceedAfterOnboarding()
-        } else {
-            showOnboarding = true
-        }
+        if (Settings.onboardingDone(context)) proceedAfterOnboarding()
+        else showOnboarding = true
     }
 
     var hasAudioPermission by remember {
@@ -245,11 +268,8 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
                 return@launch
             }
             val current = UpdateChecker.currentVersion(context)
-            if (UpdateChecker.isNewer(current, release.tag)) {
-                updateRelease = release
-            } else if (!silent) {
-                updateMessage = "Version $current ist aktuell"
-            }
+            if (UpdateChecker.isNewer(current, release.tag)) updateRelease = release
+            else if (!silent) updateMessage = "Version $current ist aktuell"
         }
     }
 
@@ -268,10 +288,9 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
                         if (total > 0) updateProgress = done.toFloat() / total
                     }
                 }
-                val ok = ApkInstaller.startInstall(context, apk)
-                if (!ok) {
+                if (!ApkInstaller.startInstall(context, apk)) {
                     updateMessage =
-                        "Installation blockiert: erlaube „Unbekannte Apps\" in den Einstellungen — Button öffnet sie"
+                        "Installation blockiert: erlaube „Unbekannte Apps“ in den Einstellungen — Button öffnet sie"
                     ApkInstaller.openInstallPermissionSettings(context)
                 }
             } catch (e: Exception) {
@@ -289,21 +308,67 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasAudioPermission = granted }
 
-    /// Transkribiert Mikrofon- oder Dateiaudio und zeigt das Ergebnis an.
+    /// Transkribiert Mikrofon- oder Dateiaudio und zeigt Fortschritt und
+    /// Ergebnis an. Der Balken kombiniert die Engine-Meldung mit einer
+    /// Zeitschätzung, die pro Modell auf diesem Gerät gelernt wird.
     suspend fun transcribeSamples(samples: FloatArray) {
-        durationS = samples.size / AudioRecorder.SAMPLE_RATE.toFloat()
-        statusMessage = "Transkribiere %.1f s Audio…".format(durationS)
-        val text = withContext(Dispatchers.Default) {
-            WhisperBridge.transcribe(samples, language)
+        val seconds = samples.size / AudioRecorder.SAMPLE_RATE.toFloat()
+        val model = modelFile ?: ""
+        val gpu = useGpu
+        val parakeet = isParakeet
+        val expected = TranscriptionProgress.expectedMs(context, model, gpu, seconds, parakeet)
+        val title = "Transkribiere ${formatDuration(seconds)} Audio"
+        val cancel = {
+            WhisperBridge.cancel()
+            work = work?.copy(title = "Wird abgebrochen…", onCancel = null)
         }
+        work = Work(title, onCancel = cancel)
+        val t0 = SystemClock.elapsedRealtime()
+
+        val text = coroutineScope {
+            val ticker = launch {
+                while (isActive) {
+                    val elapsed = SystemClock.elapsedRealtime() - t0
+                    val detail = when {
+                        expected == null -> "läuft seit ${elapsed / 1000} s — erste Messung für dieses Modell"
+                        expected - elapsed > 1500 -> "noch ca. ${(expected - elapsed + 999) / 1000} s"
+                        else -> "gleich fertig …"
+                    }
+                    work = work?.let {
+                        if (it.onCancel == null) it // Abbruch läuft — Anzeige einfrieren
+                        else it.copy(
+                            fraction = TranscriptionProgress.fraction(WhisperBridge.progress(), elapsed, expected),
+                            detail = detail,
+                        )
+                    }
+                    delay(100)
+                }
+            }
+            try {
+                withContext(Dispatchers.Default) { WhisperBridge.transcribe(samples, language) }
+            } finally {
+                ticker.cancel()
+            }
+        }
+        val elapsed = SystemClock.elapsedRealtime() - t0
+        work = null
+
         if (text == null) {
-            statusMessage = "Transkription fehlgeschlagen — anderes Modell versuchen?"
+            if (WhisperBridge.wasCancelled()) showStatus("Transkription abgebrochen")
+            else showStatus("Transkription fehlgeschlagen — anderes Modell versuchen?", isError = true)
             return
         }
+        TranscriptionProgress.record(context, model, gpu, seconds, parakeet, elapsed)
         transcript = text.trim()
-        if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
-        statusMessage = if (transcript.isEmpty()) "Keine Sprache erkannt" else null
+        if (transcript.isNotEmpty()) {
+            recordHistory(transcript, seconds)
+            showStatus(null)
+        } else {
+            showStatus("Keine Sprache erkannt")
+        }
     }
+
+    var currentJob by remember { mutableStateOf<Job?>(null) }
 
     fun transcribeUri(uri: Uri) {
         // Vorab-Prüfung: nur Audio/Video ist transkribierbar. Manche
@@ -311,26 +376,34 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
         val mime = context.contentResolver.getType(uri) ?: ""
         if (mime.isNotEmpty() && !mime.startsWith("audio/") && !mime.startsWith("video/")) {
             val name = uri.lastPathSegment?.substringAfterLast('/') ?: mime
-            statusMessage = "„$name" + "“ ist keine Audio-/Videodatei — PDFs, Bilder und Dokumente enthalten keine transkribierbare Sprache."
+            showStatus("„$name“ ist keine Audio-/Videodatei — PDFs, Bilder und Dokumente enthalten keine transkribierbare Sprache.", isError = true)
             return
         }
         busy = true
-        statusMessage = "Dekodiere Datei…"
-        scope.launch {
+        showStatus(null)
+        currentJob = scope.launch {
+            work = Work("Datei wird gelesen", fraction = 0f, onCancel = { currentJob?.cancel() })
             try {
                 val samples = withContext(Dispatchers.IO) {
                     AudioDecoder.decode(context, uri) { p ->
-                        statusMessage = "Dekodiere Datei… %.0f %%".format(p * 100)
+                        ensureActive()
+                        work = work?.copy(fraction = p)
                     }
                 }
-                if (samples.isEmpty()) statusMessage = "Die Datei enthält keine Audiodaten"
+                if (samples.isEmpty()) showStatus("Die Datei enthält keine Audiodaten", isError = true)
                 else transcribeSamples(samples)
+            } catch (e: CancellationException) {
+                showStatus("Abgebrochen")
+                throw e
             } catch (e: Exception) {
-                statusMessage = if (e.message?.contains("extractor", ignoreCase = true) == true)
-                    "Datei nicht lesbar: kein unterstütztes Audio-/Videoformat " +
-                    "(z. B. PDF, Bild oder Textdatei ausgewählt)"
-                else "Fehler: ${e.message}"
+                showStatus(
+                    if (e.message?.contains("extractor", ignoreCase = true) == true)
+                        "Datei nicht lesbar: kein unterstütztes Audio-/Videoformat (z. B. PDF, Bild oder Textdatei ausgewählt)"
+                    else "Fehler: ${e.message}",
+                    isError = true,
+                )
             } finally {
+                work = null
                 busy = false
             }
         }
@@ -348,28 +421,68 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
         }
     }
 
+    fun toggleRecording() {
+        if (!modelReady || busy) return
+        if (!hasAudioPermission) {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        if (!recording) {
+            if (recorder.start()) {
+                recording = true
+                showStatus(null)
+            } else showStatus("Mikrofon konnte nicht geöffnet werden", isError = true)
+            return
+        }
+        val samples = recorder.stop()
+        recording = false
+        if (samples.isEmpty()) return
+        busy = true
+        currentJob = scope.launch {
+            try { transcribeSamples(samples) } finally { busy = false }
+        }
+    }
+
+    fun copyTranscript(text: String) {
+        clipboard.setText(AnnotatedString(text))
+        // Ab Android 13 zeigt das System selbst eine Bestätigung an.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            scope.launch { snackbar.showSnackbar("In die Zwischenablage kopiert") }
+        }
+    }
+
+    fun shareTranscript() {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, "🎙️ (transkribiert mit Scheisssewasser's Whisper)\n\n$transcript")
+        }
+        context.startActivity(Intent.createChooser(send, "Transkript teilen"))
+    }
+
     // Offline-Changelog aus den Assets (CHANGELOG.md wird beim Build synchronisiert)
     if (showChangelog) {
         AlertDialog(
             onDismissRequest = { showChangelog = false },
+            icon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null) },
             title = { Text("Changelog") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    changelogText.split("\n\n").forEach { block ->
-                        val isHeading = block.trimStart().startsWith("##")
-                        Text(
-                            block.trim(),
-                            style = if (isHeading) MaterialTheme.typography.titleSmall
-                            else MaterialTheme.typography.bodySmall,
-                            fontWeight = if (isHeading) FontWeight.Bold else null,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
+                    changelogText.lines().forEach { line ->
+                        when {
+                            line.startsWith("## ") -> Text(
+                                line.removePrefix("## "),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                            )
+                            line.startsWith("# ") || line.isBlank() -> {}
+                            else -> Text(line, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { showChangelog = false }) { Text("Schließen") }
-            }
+            confirmButton = { TextButton(onClick = { showChangelog = false }) { Text("Schließen") } },
         )
     }
 
@@ -378,21 +491,16 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
     if (shownRelease != null) {
         AlertDialog(
             onDismissRequest = { if (!updateBusy) updateRelease = null },
-            title = { Text("Update verfügbar — ${shownRelease.tag}") },
+            icon = { Icon(Icons.Filled.SystemUpdate, contentDescription = null) },
+            title = { Text("Update auf ${shownRelease.tag}") },
             text = {
-                Column {
-                    Text("Änderungen in ${shownRelease.tag}:",
-                        style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(6.dp))
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text(shownRelease.body.ifBlank { "Neue Version ${shownRelease.tag}." },
-                        maxLines = 12, overflow = TextOverflow.Ellipsis)
+                        style = MaterialTheme.typography.bodySmall)
                     if (updateBusy) {
                         Spacer(Modifier.height(12.dp))
-                        LinearProgressIndicator(
-                            progress = { updateProgress }, Modifier.fillMaxWidth()
-                        )
-                        Text("%.0f %%".format(updateProgress * 100),
-                            style = MaterialTheme.typography.bodySmall)
+                        LinearProgressIndicator(progress = { updateProgress }, modifier = Modifier.fillMaxWidth())
+                        Text("%.0f %%".format(updateProgress * 100), style = MaterialTheme.typography.bodySmall)
                     }
                     updateMessage?.let {
                         Spacer(Modifier.height(8.dp))
@@ -401,671 +509,276 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
                 }
             },
             confirmButton = {
-                if (!updateBusy) {
-                    TextButton(onClick = { startUpdateDownload(shownRelease) }) {
-                        Text("Herunterladen & Installieren")
-                    }
-                }
+                if (!updateBusy) Button(onClick = { startUpdateDownload(shownRelease) }) { Text("Installieren") }
             },
             dismissButton = {
-                if (!updateBusy) {
-                    TextButton(onClick = { updateRelease = null }) { Text("Später") }
-                }
-            }
+                if (!updateBusy) TextButton(onClick = { updateRelease = null }) { Text("Später") }
+            },
         )
     } else if (updateMessage != null && updateChecked) {
         AlertDialog(
             onDismissRequest = { updateMessage = null },
+            icon = { Icon(Icons.Filled.SystemUpdate, contentDescription = null) },
             title = { Text("Updates") },
             text = { Text(updateMessage ?: "") },
-            confirmButton = {
-                TextButton(onClick = { updateMessage = null }) { Text("OK") }
-            }
+            confirmButton = { TextButton(onClick = { updateMessage = null }) { Text("OK") } },
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Scheisssewasser's Whisper") },
-                actions = {
-                    IconButton(onClick = {
-                        if (changelogText.isEmpty()) {
-                            scope.launch {
-                                changelogText = withContext(Dispatchers.IO) {
-                                    runCatching {
-                                        context.assets.open("CHANGELOG.md")
-                                            .bufferedReader().use { it.readText() }
-                                    }.getOrDefault("Changelog nicht gefunden.")
-                                }
+    // Löschen-Dialog für heruntergeladene Modelle
+    var confirmDeleteModel by remember { mutableStateOf<String?>(null) }
+    var localFiles by remember { mutableStateOf(ModelRegistry.localModelFiles(context).map { it.name }) }
+    fun refreshLocalFiles() { localFiles = ModelRegistry.localModelFiles(context).map { it.name } }
+    LaunchedEffect(pickerVisible, downloadingFile, modelFile) { refreshLocalFiles() }
+
+    confirmDeleteModel?.let { fileName ->
+        AlertDialog(
+            onDismissRequest = { confirmDeleteModel = null },
+            icon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+            title = { Text("Modell löschen?") },
+            text = { Text("„${modelDisplayName(fileName, manifest)}“ wird vom Gerät entfernt und kann jederzeit neu geladen werden.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    File(ModelRegistry.modelsDir(context), fileName).delete()
+                    confirmDeleteModel = null
+                    refreshLocalFiles()
+                }) { Text("Löschen", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteModel = null }) { Text("Abbrechen") } },
+        )
+    }
+
+    // Zurück-Taste schließt Ansichten statt die App zu beenden
+    BackHandler(enabled = showHistory || (pickerVisible && localFiles.isNotEmpty())) {
+        when {
+            showHistory -> showHistory = false
+            pickerVisible -> pickerVisible = false
+        }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            snackbarHost = { SnackbarHost(snackbar) },
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("Scheisssewasser's", style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary)
+                            Text("Whisper", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            history = HistoryStore.load(context)
+                            showHistory = true
+                        }) { Icon(Icons.Filled.History, contentDescription = "Verlauf") }
+                        var menu by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { menu = true }) {
+                                Icon(Icons.Filled.MoreVert, contentDescription = "Mehr")
+                            }
+                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Changelog") },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
+                                    onClick = {
+                                        menu = false
+                                        if (changelogText.isEmpty()) scope.launch {
+                                            changelogText = withContext(Dispatchers.IO) {
+                                                runCatching {
+                                                    context.assets.open("CHANGELOG.md").bufferedReader().use { it.readText() }
+                                                }.getOrDefault("Changelog nicht gefunden.")
+                                            }
+                                        }
+                                        showChangelog = true
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Nach Updates suchen") },
+                                    leadingIcon = { Icon(Icons.Filled.SystemUpdate, null) },
+                                    onClick = { menu = false; checkForUpdate(silent = false) },
+                                )
+                                // Nur sichtbar, wenn die Engine mit GPU-Backend gebaut wurde.
+                                if (gpuAvailable) DropdownMenuItem(
+                                    text = { Text("GPU (Vulkan)") },
+                                    leadingIcon = { Icon(Icons.Filled.Memory, null) },
+                                    trailingIcon = { Checkbox(checked = useGpu, onCheckedChange = null) },
+                                    enabled = !busy && !recording && downloadingFile == null,
+                                    onClick = {
+                                        menu = false
+                                        useGpu = !useGpu
+                                        Settings.setUseGpu(context, useGpu)
+                                        modelFile?.let { loadModel(it) }
+                                    },
+                                )
                             }
                         }
-                        showChangelog = true
-                    }) {
-                        Icon(Icons.Filled.MenuBook, "Changelog")
-                    }
-                    IconButton(onClick = { checkForUpdate(silent = false) }) {
-                        Icon(Icons.Filled.SystemUpdate, "Updates")
-                    }
-                    IconButton(onClick = {
-                        history = HistoryStore.load(context)
-                        showHistory = true
-                    }) {
-                        Icon(Icons.Filled.History, "Verlauf")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Box(
-            Modifier
-                .padding(padding)
-                .fillMaxSize()
-        ) {
+                    },
+                )
+            },
+        ) { padding ->
             Column(
                 Modifier
+                    .padding(padding)
                     .fillMaxSize()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(modelState, style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(12.dp))
-
-                var langExpanded by remember { mutableStateOf(false) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box {
-                        OutlinedButton(onClick = { langExpanded = true }, enabled = !isParakeet) {
-                            Icon(Icons.Filled.Language, null)
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                if (isParakeet) "Mehrsprachig"
-                                else LANGUAGES.first { it.first == language }.second
-                            )
-                        }
-                        DropdownMenu(expanded = langExpanded, onDismissRequest = { langExpanded = false }) {
-                            LANGUAGES.forEach { (code, label) ->
-                                DropdownMenuItem(text = { Text(label) }, onClick = {
-                                    language = code
-                                    Settings.setLanguage(context, code)
-                                    langExpanded = false
-                                })
-                            }
-                        }
-                    }
-                    OutlinedButton(onClick = { pickerVisible = true }, enabled = downloadingFile == null) {
-                        Icon(Icons.Filled.Tune, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Modell wechseln")
-                    }
-                }
-
-                // Vergleichsschalter CPU gegen GPU — nur sichtbar, wenn die
-                // Engine überhaupt mit einem GPU-Backend gebaut wurde.
-                if (gpuAvailable) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("GPU (Vulkan)", style = MaterialTheme.typography.bodySmall)
-                        Switch(
-                            checked = useGpu,
-                            enabled = !busy && !recording && downloadingFile == null,
-                            onCheckedChange = { on ->
-                                useGpu = on
-                                Settings.setUseGpu(context, on)
-                                modelFile?.let { loadModel(it) }
-                            }
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                Button(
-                    onClick = {
-                        if (!modelReady || busy) return@Button
-                        if (!hasAudioPermission) {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            return@Button
-                        }
-                        if (!recording) {
-                            if (recorder.start()) recording = true
-                            else statusMessage = "Mikrofon konnte nicht geöffnet werden"
-                        } else {
-                            val samples = recorder.stop()
-                            recording = false
-                            if (samples.isEmpty()) return@Button
-                            busy = true
-                            scope.launch {
-                                try { transcribeSamples(samples) } finally { busy = false }
-                            }
-                        }
-                    },
-                    enabled = modelReady && !busy && downloadingFile == null,
-                    colors = if (recording) ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    ) else ButtonDefaults.buttonColors(),
-                    modifier = Modifier.size(120.dp)
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            if (recording) Icons.Filled.Stop else Icons.Filled.Mic,
-                            null, Modifier.size(42.dp)
-                        )
-                        Text(
-                            if (recording) "Stop %d:%02d".format(recordingSeconds / 60, recordingSeconds % 60)
-                            else "Aufnehmen",
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                OutlinedButton(
-                    onClick = { filePicker.launch(arrayOf("audio/*", "video/*")) },
-                    enabled = modelReady && !busy && !recording && downloadingFile == null
-                ) {
-                    Icon(Icons.Filled.Description, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Datei transkribieren")
-                }
-
-                statusMessage?.let {
-                    Spacer(Modifier.height(12.dp))
-                    Text(it, style = MaterialTheme.typography.bodyMedium)
-                }
-
-                Spacer(Modifier.height(16.dp))
-
+                // Modell und Sprache als Chips
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Transkript", style = MaterialTheme.typography.titleMedium)
-                    if (transcript.isNotEmpty()) {
-                        Row {
-                            TextButton(onClick = {
-                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(
-                                        android.content.Intent.EXTRA_TEXT,
-                                        "🎙️ (transkribiert mit Scheisssewasser's Whisper)\n\n$transcript"
-                                    )
-                                }
-                                context.startActivity(
-                                    android.content.Intent.createChooser(send, "Transkript teilen")
+                    AssistChip(
+                        onClick = { pickerVisible = true },
+                        enabled = downloadingFile == null && !recording,
+                        label = {
+                            Text(
+                                if (modelLoading) "Lade Modell…" else modelDisplayName(modelFile, manifest),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        leadingIcon = {
+                            if (modelLoading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Filled.Tune, null, Modifier.size(18.dp))
+                        },
+                        trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) },
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    var langExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        AssistChip(
+                            onClick = { langExpanded = true },
+                            enabled = !isParakeet,
+                            label = {
+                                Text(if (isParakeet) "Mehrsprachig"
+                                     else LANGUAGES.first { it.first == language }.second.substringBefore(" ("))
+                            },
+                            leadingIcon = { Icon(Icons.Filled.Translate, null, Modifier.size(18.dp)) },
+                            trailingIcon = if (isParakeet) null else {
+                                { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) }
+                            },
+                        )
+                        DropdownMenu(expanded = langExpanded, onDismissRequest = { langExpanded = false }) {
+                            LANGUAGES.forEach { (code, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    trailingIcon = if (code == language) { { Icon(Icons.Filled.Check, null) } } else null,
+                                    onClick = {
+                                        language = code
+                                        Settings.setLanguage(context, code)
+                                        langExpanded = false
+                                    },
                                 )
-                            }) {
-                                Icon(Icons.Filled.Share, null, Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Teilen")
-                            }
-                            TextButton(onClick = { clipboard.setText(AnnotatedString(transcript)) }) {
-                                Icon(Icons.Filled.ContentCopy, null, Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Kopieren")
                             }
                         }
                     }
                 }
 
-                Surface(
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    tonalElevation = 2.dp,
-                    shape = MaterialTheme.shapes.medium
-                ) {
-                    Text(
-                        transcript.ifEmpty { "Noch keine Transkription." },
-                        Modifier
-                            .verticalScroll(rememberScrollState())
-                            .padding(12.dp)
-                    )
-                }
-            }
-
-            if (showOnboarding) {
-                OnboardingOverlay(
-                    onFinish = {
-                        Settings.setOnboardingDone(context)
-                        showOnboarding = false
-                        proceedAfterOnboarding()
-                    }
-                )
-            }
-
-            // Löschen-Dialog für heruntergeladene Modelle
-            var confirmDeleteModel by remember { mutableStateOf<String?>(null) }
-            confirmDeleteModel?.let { fileName ->
-                AlertDialog(
-                    onDismissRequest = { confirmDeleteModel = null },
-                    title = { Text("Modell löschen?") },
-                    text = { Text("\"$fileName\" wird vom Gerät entfernt. Dein aktives Modell bleibt davon unberührt, falls es ein anderes ist.") },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            File(ModelRegistry.modelsDir(context), fileName).delete()
-                            confirmDeleteModel = null
-                        }) { Text("Löschen", color = MaterialTheme.colorScheme.error) }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { confirmDeleteModel = null }) { Text("Abbrechen") }
-                    }
-                )
-            }
-
-            // Zurück-Taste schließt Overlays statt die App zu beenden
-            val pickerHasLocalModels = remember(modelFile) {
-                ModelRegistry.localModelFiles(context).isNotEmpty()
-            }
-            androidx.activity.compose.BackHandler(
-                enabled = pickerVisible || showHistory || showChangelog
-            ) {
-                when {
-                    showHistory -> showHistory = false
-                    showChangelog -> showChangelog = false
-                    pickerVisible && pickerHasLocalModels -> pickerVisible = false
-                }
-            }
-
-            if (pickerVisible) {
-                ModelPickerOverlay(
-                    manifest = manifest,
-                    manifestError = manifestError,
-                    currentFile = modelFile,
-                    downloadingFile = downloadingFile,
-                    downloadProgress = downloadProgress,
-                    downloadError = downloadError,
-                    localFiles = ModelRegistry.localModelFiles(context).map { it.name },
-                    onRetry = { refreshManifest() },
-                    onDownload = { startDownload(it) },
-                    onActivate = { loadModel(it); pickerVisible = false },
-                    onDelete = { confirmDeleteModel = it },
-                    dismissEnabled = ModelRegistry.localModelFiles(context).isNotEmpty(),
-                    onDismiss = { pickerVisible = false },
-                )
-            }
-
-            if (showHistory) {
-                HistoryOverlay(
-                    entries = history,
-                    onClose = { showHistory = false },
-                    onCopy = { clipboard.setText(AnnotatedString(it)) },
-                    onDelete = {
-                        HistoryStore.delete(context, it)
-                        history = HistoryStore.load(context)
-                    },
-                    onClearAll = {
-                        HistoryStore.clear(context)
-                        history = emptyList()
-                    },
-                )
-            }
-        }
-    }
-}
-
-/// Verlauf der bisherigen Transkriptionen.
-@Composable
-fun HistoryOverlay(
-    entries: List<HistoryEntry>,
-    onClose: () -> Unit,
-    onCopy: (String) -> Unit,
-    onDelete: (HistoryEntry) -> Unit,
-    onClearAll: () -> Unit,
-) {
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-        Column(Modifier.padding(16.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Verlauf (${entries.size})", style = MaterialTheme.typography.headlineSmall)
-                Row {
-                    if (entries.isNotEmpty()) {
-                        TextButton(onClick = onClearAll) { Text("Alle löschen") }
-                    }
-                    TextButton(onClick = onClose) { Text("Schließen") }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            if (entries.isEmpty()) {
-                Text("Noch keine Einträge.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(entries) { e ->
-                        ElevatedCard(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(12.dp)) {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(e.dateText(), fontWeight = FontWeight.Bold)
-                                    Row {
-                                        TextButton(onClick = { onCopy(e.text) }) {
-                                            Icon(Icons.Filled.ContentCopy, null, Modifier.size(14.dp))
-                                        }
-                                        TextButton(onClick = { onDelete(e) }) {
-                                            Icon(Icons.Filled.Delete, null, Modifier.size(14.dp),
-                                                tint = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
-                                // heightIn MUSS vor verticalScroll stehen: LazyColumn
-                                // misst seine Kinder mit unbegrenzter Höhe, und ein
-                                // vertikal scrollbares Element unter Infinity-Constraints
-                                // wirft in Compose eine IllegalStateException — die App
-                                // ging deshalb beim Öffnen des Verlaufs kommentarlos aus.
-                                Text(
-                                    e.text,
-                                    Modifier
-                                        .heightIn(max = 160.dp)
-                                        .verticalScroll(rememberScrollState())
-                                )
-                                Text(
-                                    listOfNotNull(
-                                        e.model.takeIf { it.isNotBlank() },
-                                        e.language.takeIf { it.isNotBlank() },
-                                        "%.1f s Audio".format(e.audioSeconds).takeIf { e.audioSeconds > 0 },
-                                    ).joinToString(" · "),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Vollbild-Overlay zur Modellwahl: Server-Manifest mit Vor-/Nachteilen,
-/// Download mit Fortschritt, Aktivieren bereits geladener Modelle.
-@Composable
-fun ModelPickerOverlay(
-    manifest: List<ModelInfo>?,
-    manifestError: String?,
-    currentFile: String?,
-    downloadingFile: String?,
-    downloadProgress: Float,
-    downloadError: String?,
-    localFiles: List<String>,
-    onRetry: () -> Unit,
-    onDownload: (ModelInfo) -> Unit,
-    onActivate: (String) -> Unit,
-    onDelete: (String) -> Unit,
-    dismissEnabled: Boolean,
-    onDismiss: () -> Unit,
-) {
-    Surface(
-        Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface
-    ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
-        ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Modell wählen", style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        "Modelle werden einmalig von einem Server von scheisssewasser.xyz bezogen und heruntergeladen",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                if (dismissEnabled) {
-                    TextButton(onClick = onDismiss) { Text("Schließen") }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-
-            when {
-                manifestError != null -> {
-                    Text("Server nicht erreichbar: $manifestError")
+                modelError?.let {
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = onRetry) { Text("Erneut versuchen") }
+                    StatusCard(it, isError = true, onDismiss = { modelError = null })
                 }
-                manifest == null -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Frage Server nach verfügbaren Modellen…")
-                    }
+
+                Spacer(Modifier.weight(0.3f))
+
+                RecordButton(
+                    recording = recording,
+                    level = micLevel,
+                    enabled = modelReady && !busy && downloadingFile == null,
+                    onClick = { toggleRecording() },
+                )
+                Text(
+                    when {
+                        recording -> formatClock(recordingSeconds)
+                        !modelReady && !modelLoading -> "Kein Modell geladen"
+                        modelLoading -> "Modell wird geladen…"
+                        else -> "Tippen zum Aufnehmen"
+                    },
+                    style = if (recording) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleMedium,
+                    color = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (recording) {
+                    Text("Tippen zum Beenden", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                else -> {
-                    manifest.forEach { info ->
-                        val isLocal = localFiles.contains(info.file)
-                        val isCurrent = currentFile == info.file
-                        val isDownloading = downloadingFile == info.file
-                        ElevatedCard(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 6.dp)
-                        ) {
-                            Column(Modifier.padding(14.dp)) {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(info.label, fontWeight = FontWeight.Bold)
-                                    Text(info.sizeText(), style = MaterialTheme.typography.bodySmall)
-                                }
-                                Text(
-                                    info.tagline,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                info.pros.forEach { Text("✓  $it", style = MaterialTheme.typography.bodySmall) }
-                                info.cons.forEach {
-                                    Text(
-                                        "✗  $it",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Spacer(Modifier.height(10.dp))
 
-                                when {
-                                    isDownloading -> {
-                                        LinearProgressIndicator(
-                                            progress = { downloadProgress },
-                                            Modifier.fillMaxWidth()
-                                        )
-                                        Text(
-                                            "%.0f %%".format(downloadProgress * 100),
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
-                                    isCurrent -> Text(
-                                        "✓ Aktiv",
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    isLocal -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Button(onClick = { onActivate(info.file) }) {
-                                            Text("Aktivieren (bereits geladen)")
-                                        }
-                                        OutlinedButton(onClick = { onDelete(info.file) }) {
-                                            Icon(
-                                                Icons.Filled.Delete, "Löschen",
-                                                Modifier.size(16.dp),
-                                                tint = MaterialTheme.colorScheme.error
-                                            )
-                                        }
-                                    }
-                                    else -> Button(
-                                        onClick = { onDownload(info) },
-                                        enabled = downloadingFile == null
-                                    ) {
-                                        Icon(Icons.Filled.Download, null, Modifier.size(16.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("Herunterladen")
-                                    }
-                                }
-                            }
-                        }
-                    }
+                Spacer(Modifier.height(16.dp))
+                FilledTonalButton(
+                    onClick = { filePicker.launch(arrayOf("audio/*", "video/*")) },
+                    enabled = modelReady && !busy && !recording && downloadingFile == null,
+                ) {
+                    Icon(Icons.Filled.AudioFile, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Audiodatei transkribieren")
+                }
 
-                    // Modelle, die lokal liegen aber nicht im Manifest stehen
-                    // (z. B. früher heruntergeladene, inzwischen entfernte)
-                    if (localFiles.any { f -> manifest.none { it.file == f } }) {
-                        Text(
-                            "Weitere lokale Modelle",
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.padding(top = 10.dp)
-                        )
-                    }
-                    localFiles.filter { f -> manifest.none { it.file == f } }.forEach { f ->
-                        ElevatedCard(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 6.dp)
-                        ) {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(f, Modifier.weight(1f))
-                                if (f == currentFile) {
-                                    Text(
-                                        "✓ Aktiv",
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(onClick = { onActivate(f) }) { Text("Aktivieren") }
-                                    OutlinedButton(onClick = { onDelete(f) }) {
-                                        Icon(
-                                            Icons.Filled.Delete, "Löschen",
-                                            Modifier.size(16.dp),
-                                            tint = MaterialTheme.colorScheme.error
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                Spacer(Modifier.weight(0.2f))
 
-                    downloadError?.let {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Downloadfehler: $it",
-                            color = MaterialTheme.colorScheme.error
-                        )
+                AnimatedVisibility(visible = work != null, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                    work?.let { WorkCard(it, Modifier.padding(vertical = 8.dp)) }
+                }
+                AnimatedVisibility(visible = work == null && statusMessage != null) {
+                    statusMessage?.let {
+                        StatusCard(it, statusIsError, onDismiss = { showStatus(null) }, Modifier.padding(vertical = 8.dp))
                     }
                 }
+
+                TranscriptCard(
+                    text = transcript,
+                    onCopy = { copyTranscript(transcript) },
+                    onShare = { shareTranscript() },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(bottom = 16.dp),
+                )
             }
         }
-    }
-}
 
-/// Einführung beim ersten App-Start: 4 Seiten, ohne Überspringen.
-private data class OnboardingPage(
-    val title: String,
-    val intro: String? = null,
-    val bullets: List<String> = emptyList(),
-    val footer: String? = null,
-)
-
-@Composable
-fun OnboardingOverlay(onFinish: () -> Unit) {
-    val pages = listOf(
-        OnboardingPage(
-            title = "Willkommen!",
-            intro = "Dies ist Scheisssewasser's Whisper — eine private Sprach-Transkriptions-App von Scheisssewasser. Sie wandelt Gesprochenes in Text um, direkt auf deinem Gerät.",
-            footer = "Privat entwickelt — für den persönlichen Einsatz, ohne Firma und ohne kommerzielle Interessen.",
-        ),
-        OnboardingPage(
-            title = "Was kann die App?",
-            bullets = listOf(
-                "🎙  Sprache zu Text: Mikrofonaufnahmen in Sekunden transkribieren",
-                "📄  Dateien: Audio- und Videodateien in Text umwandeln",
-                "⌨️  Diktat-Modus: unter Windows per Hotkey in jedes Textfeld, auf Android über die Diktat-Kachel",
-                "🕘  Verlauf: alle Transkriptionen bleiben abrufbar",
-                "🌐  Sprachen: Deutsch, English oder automatisch",
-            ),
-        ),
-        OnboardingPage(
-            title = "Deine Vorteile",
-            bullets = listOf(
-                "🔒  100 % offline: Dein Audio verlässt das Gerät nie — keine Cloud, keine Datensammelei",
-                "💸  Kostenlos und ohne Konto nutzbar",
-                "⚙️  Mehrere Modelle wählbar — maximal genau oder blitzschnell",
-                "🔄  Automatische Updates direkt aus der App",
-            ),
-        ),
-        OnboardingPage(
-            title = "Los geht's!",
-            intro = "Im nächsten Schritt wählst du ein Sprachmodell. Es wird einmalig von einem Server von scheisssewasser.xyz bezogen und heruntergeladen — danach läuft alles komplett offline.",
-            footer = "Tippe auf „Weiter“, um zu beginnen.",
-        ),
-    )
-    var page by remember { mutableStateOf(0) }
-    val isLast = page == pages.lastIndex
-
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Spacer(Modifier.weight(0.6f))
-            Text(
-                "Scheisssewasser's Whisper",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+        // Vollbild-Ansichten liegen über der gesamten Oberfläche
+        if (pickerVisible) {
+            ModelPickerOverlay(
+                manifest = manifest,
+                manifestError = manifestError,
+                currentFile = modelFile,
+                downloadingFile = downloadingFile,
+                downloadProgress = downloadProgress,
+                downloadError = downloadError,
+                localFiles = localFiles,
+                onRetry = { refreshManifest() },
+                onDownload = { startDownload(it) },
+                onActivate = { loadModel(it); pickerVisible = false },
+                onDelete = { confirmDeleteModel = it },
+                dismissEnabled = localFiles.isNotEmpty(),
+                onDismiss = { pickerVisible = false },
             )
-            Text(
-                "Seite ${page + 1} von ${pages.size}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-            Spacer(Modifier.weight(0.4f))
+        }
 
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp)) {
-                    Text(pages[page].title, style = MaterialTheme.typography.titleLarge)
-                    Spacer(Modifier.height(10.dp))
-                    pages[page].intro?.let {
-                        Text(it, style = MaterialTheme.typography.bodyMedium)
-                        Spacer(Modifier.height(8.dp))
-                    }
-                    pages[page].bullets.forEach {
-                        Text("•  $it", style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(vertical = 3.dp))
-                    }
-                    pages[page].footer?.let {
-                        Spacer(Modifier.height(8.dp))
-                        Text(it, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+        if (showHistory) {
+            HistoryOverlay(
+                entries = history,
+                onClose = { showHistory = false },
+                onCopy = { copyTranscript(it) },
+                onDelete = {
+                    HistoryStore.delete(context, it)
+                    history = HistoryStore.load(context)
+                },
+                onClearAll = {
+                    HistoryStore.clear(context)
+                    history = emptyList()
+                },
+            )
+        }
+
+        if (showOnboarding) {
+            OnboardingOverlay(
+                onFinish = {
+                    Settings.setOnboardingDone(context)
+                    showOnboarding = false
+                    proceedAfterOnboarding()
                 }
-            }
-
-            Spacer(Modifier.weight(1f))
-
-            Button(
-                onClick = { if (isLast) onFinish() else page++ },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) {
-                Text(if (isLast) "Los geht's" else "Weiter", fontSize = MaterialTheme.typography.titleMedium.fontSize)
-            }
-            Spacer(Modifier.height(12.dp))
+            )
         }
     }
 }

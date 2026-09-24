@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fensterhintergrund bis Compose zeichnet: folgt Hell/Dunkel (values-night),
+         sonst blitzt beim Start im Dunkelmodus ein weißes Fenster auf. -->
+    <style name="Theme.Whisper" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/background_light</item>
+    </style>
+
+    <!-- Diktat: durchsichtiges Fenster, sichtbar ist nur der Compose-Dialog.
+         Mit einem Dialog-Theme stand dahinter ein zweiter, leerer Rahmen. -->
+    <style name="Theme.Whisper.Overlay" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+    </style>
+</resources>

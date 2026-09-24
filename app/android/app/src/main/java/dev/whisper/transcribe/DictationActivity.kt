@@ -6,12 +6,17 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
@@ -25,6 +30,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -49,7 +55,7 @@ class DictationActivity : ComponentActivity() {
             return
         }
 
-        setContent { DictationUi(modelFile!!.absolutePath) }
+        setContent { WhisperTheme { DictationUi(modelFile!!.absolutePath) } }
     }
 }
 
@@ -62,6 +68,7 @@ fun DictationUi(modelPath: String) {
     var state by remember { mutableStateOf(DictationState.PREPARING) }
     var message by remember { mutableStateOf("Lade Modell…") }
     var resultText by remember { mutableStateOf("") }
+    var progress by remember { mutableStateOf<Float?>(null) }
     val recorder = remember { AudioRecorder() }
     fun close() = (context as? ComponentActivity)?.finish()
 
@@ -125,13 +132,30 @@ fun DictationUi(modelPath: String) {
                 message = "Modell konnte nicht geladen werden"
                 return@launch
             }
-            val t0 = System.currentTimeMillis()
+            val model = modelPath.substringAfterLast('/')
+            val gpu = Settings.useGpu(context)
+            val parakeet = WhisperBridge.engineKind() == WhisperBridge.ENGINE_PARAKEET
+            val expected = TranscriptionProgress.expectedMs(context, model, gpu, audioSeconds, parakeet)
+            val t0 = SystemClock.elapsedRealtime()
+            val ticker = launch {
+                while (isActive) {
+                    progress = TranscriptionProgress.fraction(
+                        WhisperBridge.progress(), SystemClock.elapsedRealtime() - t0, expected)
+                    delay(100)
+                }
+            }
             val text = withContext(Dispatchers.Default) {
                 WhisperBridge.transcribe(samples, Settings.language(context))
             }
-            val secs = (System.currentTimeMillis() - t0) / 1000f
+            ticker.cancel()
+            val elapsedMs = SystemClock.elapsedRealtime() - t0
+            val secs = elapsedMs / 1000f
             val trimmed = text?.trim().orEmpty()
-            if (text == null) {
+            if (text != null) TranscriptionProgress.record(context, model, gpu, audioSeconds, parakeet, elapsedMs)
+            if (text == null && WhisperBridge.wasCancelled()) {
+                close()
+                return@launch
+            } else if (text == null) {
                 state = DictationState.ERROR
                 message = "Transkription fehlgeschlagen"
             } else if (trimmed.isEmpty()) {
@@ -160,14 +184,17 @@ fun DictationUi(modelPath: String) {
         if (state == DictationState.PREPARING) startRecording()
     }
 
-    var recordingSeconds by remember { mutableStateOf(0) }
+    var recordingSeconds by remember { mutableIntStateOf(0) }
+    var micLevel by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(state) {
-        val t0 = System.currentTimeMillis()
+        val t0 = SystemClock.elapsedRealtime()
         while (state == DictationState.RECORDING) {
-            recordingSeconds = ((System.currentTimeMillis() - t0) / 1000).toInt()
-            delay(250)
+            recordingSeconds = ((SystemClock.elapsedRealtime() - t0) / 1000).toInt()
+            micLevel = recorder.level
+            delay(60)
         }
     }
+    val animatedLevel by animateFloatAsState(micLevel, tween(100), label = "level")
 
     AlertDialog(
         // Zurück-Taste und Tippen daneben schließen — nur nicht mitten in
@@ -176,12 +203,29 @@ fun DictationUi(modelPath: String) {
         onDismissRequest = {
             if (state != DictationState.RECORDING && state != DictationState.TRANSCRIBING) close()
         },
+        icon = {
+            Icon(
+                when (state) {
+                    DictationState.RECORDING -> Icons.Filled.Mic
+                    DictationState.TRANSCRIBING -> Icons.Filled.GraphicEq
+                    DictationState.DONE -> Icons.Filled.CheckCircle
+                    DictationState.ERROR -> Icons.Filled.ErrorOutline
+                    DictationState.PREPARING -> Icons.Filled.HourglassTop
+                },
+                contentDescription = null,
+                tint = when (state) {
+                    DictationState.RECORDING, DictationState.ERROR -> MaterialTheme.colorScheme.error
+                    DictationState.DONE -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.primary
+                },
+            )
+        },
         title = {
             Text(
                 when (state) {
-                    DictationState.RECORDING -> "🎙 Aufnahme"
-                    DictationState.TRANSCRIBING -> "⏳ Transkription"
-                    DictationState.DONE -> "✓ Kopiert"
+                    DictationState.RECORDING -> "Aufnahme"
+                    DictationState.TRANSCRIBING -> "Transkription"
+                    DictationState.DONE -> "Kopiert"
                     DictationState.ERROR -> "Fehler"
                     DictationState.PREPARING -> "Vorbereitung"
                 }, textAlign = TextAlign.Center,
@@ -192,13 +236,30 @@ fun DictationUi(modelPath: String) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(message, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 if (state == DictationState.RECORDING) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(12.dp))
                     Text(
-                        "%d:%02d".format(recordingSeconds / 60, recordingSeconds % 60),
-                        style = MaterialTheme.typography.headlineSmall,
+                        formatClock(recordingSeconds),
+                        style = MaterialTheme.typography.displaySmall,
+                        color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(Modifier.height(8.dp))
+                    // Pegel: zeigt, dass das Mikrofon tatsächlich etwas hört
+                    LinearProgressIndicator(
+                        progress = { animatedLevel },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (state == DictationState.TRANSCRIBING) {
+                    Spacer(Modifier.height(12.dp))
+                    val p = progress
+                    if (p == null) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    else {
+                        val animated by animateFloatAsState(p, tween(300), label = "progress")
+                        LinearProgressIndicator(progress = { animated }, modifier = Modifier.fillMaxWidth())
+                    }
                 }
                 if (resultText.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
@@ -211,10 +272,14 @@ fun DictationUi(modelPath: String) {
         confirmButton = {
             when (state) {
                 DictationState.RECORDING -> TextButton(onClick = { stopAndTranscribe() }) {
-                    Text("⏹ Fertig")
+                    Text("Fertig")
                 }
                 DictationState.DONE, DictationState.ERROR ->
                     TextButton(onClick = { close() }) { Text("Schließen") }
+                DictationState.TRANSCRIBING -> TextButton(onClick = {
+                    WhisperBridge.cancel()
+                    message = "Wird abgebrochen…"
+                }) { Text("Abbrechen") }
                 else -> {}
             }
         },

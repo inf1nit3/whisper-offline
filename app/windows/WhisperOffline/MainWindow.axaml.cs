@@ -144,6 +144,8 @@ public partial class MainWindow : Window
         {
             var native = WhisperNative.Transcribe(samples, lang, settings.ShortCtx);
             if (native != null) return native.Trim();
+            // Abgebrochen heißt abgebrochen — nicht über whisper-cli neu anfangen.
+            if (WhisperNative.WasCancelled) return "";
         }
         var wav = Path.Combine(Path.GetTempPath(), "whisper_offline_rec.wav");
         WavWriter.Write16kMono(wav, samples);
@@ -153,22 +155,69 @@ public partial class MainWindow : Window
     private static bool IsParakeetModel =>
         Path.GetFileName(WhisperCli.SelectedModel).Contains("parakeet", StringComparison.OrdinalIgnoreCase);
 
-    /// Dateien dekodiert Media Foundation, transkribiert wird mit der geladenen
-    /// Engine — so gehen auch M4A/MP4/WMA und Parakeet-Modelle. whisper-cli
-    /// bleibt Rückfall für Formate, die Windows nicht kennt (z. B. Ogg).
-    private (string Text, float Seconds, string Error) TranscribeFile(string path)
+    /// Transkribiert und zeigt dabei Fortschritt und Abbrechen-Knopf. Der
+    /// Balken kombiniert die Engine-Meldung mit einer Zeitschätzung, die pro
+    /// Modell auf diesem Rechner gelernt wird.
+    private async Task<string> TranscribeWithProgress(float[] samples)
     {
-        var samples = AudioFileDecoder.TryDecode(path);
-        if (samples != null)
+        var seconds = samples.Length / 16000.0;
+        var model = Path.GetFileName(WhisperCli.SelectedModel);
+        var parakeet = IsParakeetModel;
+        var expected = TranscriptionEstimate.ExpectedMs(settings, model, seconds, parakeet);
+        var clock = Stopwatch.StartNew();
+
+        ShowWork(cancellable: true);
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        timer.Tick += (_, _) =>
         {
-            if (samples.Length == 0) return ("", 0, "Die Datei enthält keine Audiodaten.");
-            return (TranscribeSamples(samples), samples.Length / 16000f, "");
+            var elapsed = clock.ElapsedMilliseconds;
+            var fraction = TranscriptionEstimate.Fraction(WhisperNative.Progress, elapsed, expected);
+            WorkProgress.IsIndeterminate = fraction == null;
+            if (fraction != null) WorkProgress.Value = fraction.Value;
+            if (WorkCancelButton.IsEnabled)
+                WorkDetail.Text = expected == null ? $"läuft seit {elapsed / 1000} s"
+                    : expected - elapsed > 1500 ? $"noch ca. {(expected - elapsed + 999) / 1000} s"
+                    : "gleich fertig …";
+        };
+        timer.Start();
+        try
+        {
+            var text = await Task.Run(() => TranscribeSamples(samples));
+            if (text.Length > 0 && !WhisperNative.WasCancelled)
+                TranscriptionEstimate.Record(settings, model, seconds, parakeet, clock.ElapsedMilliseconds);
+            return text;
         }
-        if (IsParakeetModel)
-            return ("", 0, "Windows kann dieses Format nicht dekodieren — bitte als MP3, M4A oder WAV speichern.");
-        var text = WhisperCli.Transcribe(path, Lang, out var err);
-        return (text, 0, err);
+        finally
+        {
+            timer.Stop();
+            HideWork();
+        }
     }
+
+    private void ShowWork(bool cancellable)
+    {
+        WorkProgress.IsIndeterminate = true;
+        WorkProgress.Value = 0;
+        WorkDetail.Text = "";
+        WorkCancelButton.IsVisible = cancellable;
+        WorkCancelButton.IsEnabled = true;
+        WorkPanel.IsVisible = true;
+    }
+
+    private void HideWork() => WorkPanel.IsVisible = false;
+
+    private void OnWorkCancel(object? sender, RoutedEventArgs e)
+    {
+        WhisperNative.Cancel();
+        WorkCancelButton.IsEnabled = false;
+        WorkDetail.Text = "Wird abgebrochen…";
+    }
+
+    /// Statuszeile nach einer Transkription.
+    private static string ResultStatus(string text, double seconds) =>
+        WhisperNative.WasCancelled ? "Transkription abgebrochen." :
+        text.Length == 0 ? "Keine Sprache erkannt." :
+        $"Fertig ({seconds:F1} s Audio transkribiert).";
 
     // ---------- Hotkey und Hintergrundbetrieb ----------
 
@@ -317,10 +366,10 @@ public partial class MainWindow : Window
 
         busy = true;
         StatusLabel.Text = "Transkribiere Diktat…";
-        var text = (await Task.Run(() => TranscribeSamples(samples))).Trim();
+        var text = (await TranscribeWithProgress(samples)).Trim();
         if (text.Length == 0)
         {
-            StatusLabel.Text = "Kein Text erkannt";
+            StatusLabel.Text = WhisperNative.WasCancelled ? "Diktat abgebrochen" : "Kein Text erkannt";
             busy = false;
             return;
         }
@@ -774,9 +823,9 @@ public partial class MainWindow : Window
         var samples = recorder.Stop();
         RecordButton.Content = "🎙  Aufnahme starten";
         StatusLabel.Text = $"Transkribiere {samples.Length / 16000f:F1} s Audio…";
-        var result = await Task.Run(() => TranscribeSamples(samples));
+        var result = await TranscribeWithProgress(samples);
         AppendTranscript(result, samples.Length / 16000f);
-        StatusLabel.Text = $"Fertig ({samples.Length / 16000f:F1} s Audio transkribiert).";
+        StatusLabel.Text = ResultStatus(result, samples.Length / 16000.0);
         busy = false;
     }
 
@@ -819,13 +868,49 @@ public partial class MainWindow : Window
 
         busy = true;
         FileButton.IsEnabled = RecordButton.IsEnabled = false;
-        StatusLabel.Text = $"Transkribiere „{Path.GetFileName(path)}“…";
-        var (text, seconds, error) = await Task.Run(() => TranscribeFile(path!));
-        AppendTranscript(text, seconds);
-        StatusLabel.Text =
-            error.Length > 0 ? error :
-            text.Trim().Length == 0 ? "Keine Sprache erkannt." :
-            seconds > 0 ? $"Fertig ({seconds:F1} s Audio transkribiert)." : "Fertig.";
+        var name = Path.GetFileName(path);
+        try
+        {
+            // Media Foundation dekodiert, die geladene Engine transkribiert — so
+            // gehen auch M4A/MP4/WMA und Parakeet-Modelle. whisper-cli bleibt
+            // Rückfall für Formate, die Windows nicht kennt (z. B. Ogg).
+            StatusLabel.Text = $"Lese „{name}“…";
+            ShowWork(cancellable: false);
+            var samples = await Task.Run(() => AudioFileDecoder.TryDecode(path!));
+            HideWork();
+
+            if (samples is { Length: > 0 })
+            {
+                var seconds = samples.Length / 16000.0;
+                StatusLabel.Text = $"Transkribiere „{name}“ ({seconds:F1} s Audio)…";
+                var text = await TranscribeWithProgress(samples);
+                AppendTranscript(text, (float)seconds);
+                StatusLabel.Text = ResultStatus(text, seconds);
+            }
+            else if (samples != null)
+            {
+                StatusLabel.Text = "Die Datei enthält keine Audiodaten.";
+            }
+            else if (IsParakeetModel)
+            {
+                StatusLabel.Text = "Windows kann dieses Format nicht dekodieren — bitte als MP3, M4A oder WAV speichern.";
+            }
+            else
+            {
+                StatusLabel.Text = $"Transkribiere „{name}“ über whisper-cli…";
+                ShowWork(cancellable: false);
+                var lang = Lang;
+                string err = "";
+                var text = await Task.Run(() => WhisperCli.Transcribe(path!, lang, out err));
+                HideWork();
+                AppendTranscript(text, 0);
+                StatusLabel.Text = err.Length > 0 ? err : text.Trim().Length == 0 ? "Keine Sprache erkannt." : "Fertig.";
+            }
+        }
+        finally
+        {
+            HideWork();
+        }
         FileButton.IsEnabled = RecordButton.IsEnabled = true;
         busy = false;
     }

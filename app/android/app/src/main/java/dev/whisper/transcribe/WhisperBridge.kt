@@ -19,12 +19,25 @@ object WhisperBridge {
 
     fun free() = synchronized(lock) { freeModel() }
 
-    /// Transkript der 16-kHz-Mono-Samples; null, wenn die Engine scheitert.
+    /// Transkript der 16-kHz-Mono-Samples; null, wenn die Engine scheitert
+    /// oder per [cancel] abgebrochen wurde ([wasCancelled] unterscheidet).
     /// Wartet, falls gerade ein Modell geladen wird.
     fun transcribe(samples: FloatArray, language: String): String? =
         synchronized(lock) {
             transcribe(samples, language, false).takeUnless { it.startsWith(ERROR_PREFIX) }
         }
+
+    /// Prozent 0–100 der laufenden Transkription, außerhalb eines Laufs 0.
+    /// Ohne Sperre — aus dem UI-Thread abfragbar, während [transcribe] rechnet.
+    /// Whisper meldet je 30-s-Fenster, Parakeet nur Anfang und Ende.
+    external fun progress(): Int
+
+    /// Bricht die laufende Transkription ab. Greift an der nächsten Prüfstelle
+    /// der Engine — bei Parakeet erst nach dem Encoder-Durchlauf.
+    external fun cancel()
+
+    /// Wurde der letzte Durchgang per [cancel] beendet?
+    external fun wasCancelled(): Boolean
 
     private external fun loadModel(path: String, useGpu: Boolean): Boolean
     external fun isModelLoaded(): Boolean

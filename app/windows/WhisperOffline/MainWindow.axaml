@@ -49,6 +49,15 @@
                 <TextBlock Text="Das Fenster schließen legt die App in den Infobereich. Der Hotkey wirkt überall."
                            FontSize="12" Foreground="Gray" TextWrapping="Wrap" />
                 <TextBlock x:Name="StatusLabel" Text="" Foreground="Gray" TextWrapping="Wrap" />
+                <!-- Fortschritt der laufenden Transkription -->
+                <Grid x:Name="WorkPanel" ColumnDefinitions="*,Auto,Auto" IsVisible="False">
+                    <ProgressBar x:Name="WorkProgress" Grid.Column="0" Minimum="0" Maximum="1"
+                                 Height="6" MinWidth="0" VerticalAlignment="Center" />
+                    <TextBlock x:Name="WorkDetail" Grid.Column="1" Margin="12,0,0,0" FontSize="12"
+                               Foreground="Gray" VerticalAlignment="Center" />
+                    <Button x:Name="WorkCancelButton" Grid.Column="2" Content="Abbrechen"
+                            Margin="12,0,0,0" Click="OnWorkCancel" />
+                </Grid>
                 <TextBlock x:Name="EngineLabel" Text="" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
             </StackPanel>
 

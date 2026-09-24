@@ -69,6 +69,34 @@ public static class WhisperNative
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern int ws_engine_kind();
 
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int ws_progress();
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void ws_cancel();
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int ws_was_cancelled();
+
+    /// Prozent 0–100 der laufenden Transkription, außerhalb eines Laufs 0.
+    /// Ohne Sperre — aus dem UI-Thread abfragbar, während Transcribe rechnet.
+    /// Whisper meldet je 30-s-Fenster, Parakeet nur Anfang und Ende.
+    public static int Progress => Optional(() => ws_progress(), 0);
+
+    /// Bricht die laufende Transkription an der nächsten Prüfstelle der Engine ab.
+    public static void Cancel() => Optional(() => { ws_cancel(); return 0; }, 0);
+
+    public static bool WasCancelled => Optional(() => ws_was_cancelled(), 0) != 0;
+
+    /// Eine ältere whisper_shim.dll kennt diese Exporte nicht — dann eben
+    /// ohne Fortschritt und Abbruch statt mit Absturz.
+    private static T Optional<T>(Func<T> call, T fallback)
+    {
+        if (!Available) return fallback;
+        try { return call(); }
+        catch (EntryPointNotFoundException) { return fallback; }
+    }
+
     /// Parakeet ist mehrsprachig und hat kein festes Encoder-Fenster — dort sind
     /// Sprachauswahl und Kurzaudio-Schalter wirkungslos.
     public static bool IsParakeet => Available && ws_engine_kind() == 2;

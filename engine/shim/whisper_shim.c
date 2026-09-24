@@ -82,3 +82,8 @@ WS_API int ws_threads(void)              { return we_threads(); }
 
 /// 0 = keins, 1 = Whisper, 2 = Parakeet.
 WS_API int ws_engine_kind(void)          { return we_engine_kind(); }
+
+/// Prozent 0–100 der laufenden Transkription; ohne Sperre aus dem UI-Thread abfragbar.
+WS_API int ws_progress(void)             { return we_progress(); }
+WS_API void ws_cancel(void)              { we_cancel(); }
+WS_API int ws_was_cancelled(void)        { return we_was_cancelled() ? 1 : 0; }
