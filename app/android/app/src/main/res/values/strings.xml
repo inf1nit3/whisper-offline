@@ -4,6 +4,8 @@
     <string name="shortcut_dictate_short">Diktat</string>
     <string name="shortcut_dictate_long">Diktat starten</string>
     <string name="dictate_label">Whisper Diktat</string>
+    <string name="keyboard_label">Whisper Diktat-Tastatur</string>
+    <string name="keyboard_subtype">Spracheingabe (offline)</string>
     <string name="channel_progress">Laufende Transkription</string>
     <string name="channel_done">Fertige Transkriptionen</string>
 </resources>

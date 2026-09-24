@@ -346,7 +346,7 @@ private val ONBOARDING = listOf(
             Icons.Filled.Mic to "Sprache zu Text: Mikrofonaufnahmen in Sekunden transkribieren",
             Icons.Filled.AudioFile to "Dateien: Audio- und Videodateien in Text umwandeln",
             Icons.Filled.Share to "Teilen: Sprachnachrichten aus WhatsApp & Co. direkt an die App schicken",
-            Icons.Filled.KeyboardVoice to "Diktat: über die Schnelleinstellungs-Kachel aus jeder App",
+            Icons.Filled.KeyboardVoice to "Diktat: eigene Tastatur schreibt direkt ins Textfeld, dazu Schnelleinstellungs-Kachel",
             Icons.Filled.History to "Verlauf: alle Transkriptionen bleiben abrufbar",
         ),
     ),

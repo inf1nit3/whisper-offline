@@ -24,7 +24,10 @@ object WhisperBridge {
     /// Wartet, falls gerade ein Modell geladen wird.
     fun transcribe(samples: FloatArray, language: String): String? =
         synchronized(lock) {
-            transcribe(samples, language, false).takeUnless { it.startsWith(ERROR_PREFIX) }
+            transcribe(samples, language, false)
+                .takeUnless { it.startsWith(ERROR_PREFIX) }
+                // Whisper beginnt jedes Segment mit einem Leerzeichen — pro Zeile weg damit.
+                ?.lines()?.joinToString("\n") { it.trim() }
         }
 
     /// Prozent 0–100 der laufenden Transkription, außerhalb eines Laufs 0.

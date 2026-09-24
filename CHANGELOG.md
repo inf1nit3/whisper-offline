@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.4
+
+- **Wichtig:** Absturz behoben — v2.3 beendete sich auf Android 14 und neuer
+  beim Start jeder Transkription (Vordergrunddienst mit falschem Typ)
+- Neu: Diktat-Tastatur — sprechen, und der Text landet direkt im Textfeld von
+  WhatsApp, Mail & Co., ohne Zwischenablage. Einrichten über ⋮ →
+  „Diktat-Tastatur einrichten“; mit dem Tastatur-Knopf geht es zurück zur
+  gewohnten Tastatur
+- Transkripte ohne überflüssige Leerzeichen am Zeilenanfang
+- Getestet auf Android 16 (Emulator): Hintergrund-Transkription mit
+  Fortschritts- und Fertig-Benachrichtigung, Tastatur, Querformat
+
 ## v2.3
 
 - Android 16+: Fortschritt als Live-Update in der Statusleiste und auf dem

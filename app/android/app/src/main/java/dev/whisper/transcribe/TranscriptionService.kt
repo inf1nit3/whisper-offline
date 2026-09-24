@@ -52,7 +52,14 @@ class TranscriptionService : Service() {
         // Nach startForegroundService muss startForeground in jedem Fall
         // folgen — auch wenn der Auftrag schon fertig ist.
         val running = TranscriptionJobs.running.value
-        startInForeground(progressNotification(running ?: TranscriptionJobs.Running("Transkription", null, null)))
+        try {
+            startInForeground(progressNotification(running ?: TranscriptionJobs.Running("Transkription", null, null)))
+        } catch (e: Exception) {
+            // Lieber ohne Statusleisten-Anzeige weiterrechnen als die App beenden.
+            android.util.Log.e("TranscriptionService", "startForeground fehlgeschlagen", e)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         if (!observing) {
             if (running == null) {
                 stopSelfNow()
@@ -85,13 +92,17 @@ class TranscriptionService : Service() {
         stopSelf(lastStartId)
     }
 
+    /// Bewusst ohne ServiceCompat: androidx.core 1.17 maskiert den Typ auf die
+    /// Werte von Android 14 und verschluckt dabei mediaProcessing (erst ab 15).
+    /// Beim System kam dann „type none“ an — und das beendet die App.
     private fun startInForeground(notification: android.app.Notification) {
-        val type = when {
-            Build.VERSION.SDK_INT >= 35 -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
-            Build.VERSION.SDK_INT >= 29 -> ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            else -> 0
+        when {
+            Build.VERSION.SDK_INT >= 35 ->
+                startForeground(ID_PROGRESS, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
+            Build.VERSION.SDK_INT >= 29 ->
+                startForeground(ID_PROGRESS, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            else -> startForeground(ID_PROGRESS, notification)
         }
-        ServiceCompat.startForeground(this, ID_PROGRESS, notification, type)
     }
 
     /// Android 15+: Die Tageszeit für diese Dienstart ist aufgebraucht (6 h).

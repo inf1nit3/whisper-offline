@@ -538,6 +538,14 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
                                     leadingIcon = { Icon(Icons.Filled.SystemUpdate, null) },
                                     onClick = { menu = false; checkForUpdate(silent = false) },
                                 )
+                                DropdownMenuItem(
+                                    text = { Text("Diktat-Tastatur einrichten") },
+                                    leadingIcon = { Icon(Icons.Filled.Keyboard, null) },
+                                    onClick = {
+                                        menu = false
+                                        setUpKeyboard(context) { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+                                    },
+                                )
                                 // Ab Android 13 kann die App die Kachel selbst anbieten —
                                 // statt Schnelleinstellungen von Hand bearbeiten.
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) DropdownMenuItem(
@@ -796,6 +804,24 @@ private fun requestDictationTile(context: Context, onResult: (String) -> Unit) {
                 android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> "Kachel nicht hinzugefügt"
                 else -> "Das System hat die Anfrage abgelehnt — Kachel bitte von Hand hinzufügen"
             }
+        )
+    }
+}
+
+/// Diktat-Tastatur einrichten: Ist sie noch nicht aktiviert, die
+/// Tastatur-Einstellungen öffnen (dort einschalten); sonst direkt die
+/// Systemauswahl zeigen, um zu ihr zu wechseln.
+private fun setUpKeyboard(context: Context, onHint: (String) -> Unit) {
+    val imm = context.getSystemService(android.view.inputmethod.InputMethodManager::class.java) ?: return
+    val enabled = imm.enabledInputMethodList.any {
+        it.packageName == context.packageName && it.serviceName.endsWith("WhisperKeyboardService")
+    }
+    if (enabled) {
+        imm.showInputMethodPicker()
+    } else {
+        onHint("„Whisper Diktat-Tastatur“ einschalten, dann hier nochmal tippen")
+        context.startActivity(
+            Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }
 }

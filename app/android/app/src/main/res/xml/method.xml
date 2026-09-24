@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Diktat-Tastatur. imeSubtypeMode="voice" meldet sie als Spracheingabe: Viele
+     Tastaturen bieten solche Eingabemethoden über ihre Mikrofon-/Wechseltaste an. -->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="dev.whisper.transcribe.MainActivity"
+    android:supportsSwitchingToNextInputMethod="true">
+    <subtype
+        android:label="@string/keyboard_subtype"
+        android:imeSubtypeMode="voice"
+        android:imeSubtypeLocale=""
+        android:isAuxiliary="false" />
+</input-method>

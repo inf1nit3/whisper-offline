@@ -112,6 +112,18 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+        <!-- Diktat-Tastatur: Text geht direkt ins aktive Textfeld -->
+        <service android:name=".WhisperKeyboardService"
+            android:label="@string/keyboard_label"
+            android:icon="@drawable/ic_mic"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data android:name="android.view.im" android:resource="@xml/method" />
+        </service>
+
         <service android:name=".TranscriptionService"
             android:exported="false"
             android:foregroundServiceType="mediaProcessing|dataSync" />
