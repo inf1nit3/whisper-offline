@@ -2,7 +2,9 @@ package dev.whisper.transcribe
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -27,17 +29,38 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+
+    /// Über „Teilen“ empfangene Audio-/Videodatei, z. B. eine Sprachnachricht
+    /// aus WhatsApp. Die App transkribiert sie, sobald ein Modell bereitsteht.
+    private val sharedUri = mutableStateOf<Uri?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Settings.migrate(this)
-        setContent { App() }
+        // Nach einer Neuerstellung (etwa Dunkelmodus) nicht erneut transkribieren.
+        if (savedInstanceState == null) sharedUri.value = incomingUri(intent)
+        setContent {
+            App(sharedUri = sharedUri.value, onSharedConsumed = { sharedUri.value = null })
+        }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        incomingUri(intent)?.let { sharedUri.value = it }
+    }
+
+    private fun incomingUri(intent: Intent?): Uri? =
+        if (intent?.action == Intent.ACTION_SEND)
+            IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+        else null
 }
 
 // "Automatisch" kostet einen kompletten zusätzlichen Encoder-Durchlauf zur
@@ -50,7 +73,7 @@ private val LANGUAGES = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun App() {
+fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -94,6 +117,20 @@ fun App() {
     var downloadError by remember { mutableStateOf<String?>(null) }
 
     val recorder = remember { AudioRecorder() }
+    // Wird die Aktivität verlassen oder neu erstellt, darf das Mikrofon nicht
+    // im Hintergrund weiterlaufen.
+    DisposableEffect(recorder) { onDispose { if (recorder.isRecording) recorder.stop() } }
+
+    // Laufende Aufnahmezeit unter dem Aufnahme-Knopf
+    var recordingSeconds by remember { mutableStateOf(0) }
+    LaunchedEffect(recording) {
+        recordingSeconds = 0
+        val t0 = System.currentTimeMillis()
+        while (recording) {
+            recordingSeconds = ((System.currentTimeMillis() - t0) / 1000).toInt()
+            delay(250)
+        }
+    }
 
     /// Lädt ein Modell. Wird nur bei Erfolg als aktives Modell gespeichert —
     /// ein Fehlschlag (z. B. Parakeet, das die Android-Engine nicht kennt)
@@ -103,7 +140,7 @@ fun App() {
         modelReady = false
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                WhisperBridge.loadModel(
+                WhisperBridge.load(
                     File(ModelRegistry.modelsDir(context), fileName).absolutePath, useGpu
                 )
             }
@@ -252,43 +289,62 @@ fun App() {
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasAudioPermission = granted }
 
+    /// Transkribiert Mikrofon- oder Dateiaudio und zeigt das Ergebnis an.
+    suspend fun transcribeSamples(samples: FloatArray) {
+        durationS = samples.size / AudioRecorder.SAMPLE_RATE.toFloat()
+        statusMessage = "Transkribiere %.1f s Audio…".format(durationS)
+        val text = withContext(Dispatchers.Default) {
+            WhisperBridge.transcribe(samples, language)
+        }
+        if (text == null) {
+            statusMessage = "Transkription fehlgeschlagen — anderes Modell versuchen?"
+            return
+        }
+        transcript = text.trim()
+        if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
+        statusMessage = if (transcript.isEmpty()) "Keine Sprache erkannt" else null
+    }
+
+    fun transcribeUri(uri: Uri) {
+        // Vorab-Prüfung: nur Audio/Video ist transkribierbar. Manche
+        // Dateiauswahl-Apps zeigen trotz MIME-Filter alles an.
+        val mime = context.contentResolver.getType(uri) ?: ""
+        if (mime.isNotEmpty() && !mime.startsWith("audio/") && !mime.startsWith("video/")) {
+            val name = uri.lastPathSegment?.substringAfterLast('/') ?: mime
+            statusMessage = "„$name" + "“ ist keine Audio-/Videodatei — PDFs, Bilder und Dokumente enthalten keine transkribierbare Sprache."
+            return
+        }
+        busy = true
+        statusMessage = "Dekodiere Datei…"
+        scope.launch {
+            try {
+                val samples = withContext(Dispatchers.IO) {
+                    AudioDecoder.decode(context, uri) { p ->
+                        statusMessage = "Dekodiere Datei… %.0f %%".format(p * 100)
+                    }
+                }
+                if (samples.isEmpty()) statusMessage = "Die Datei enthält keine Audiodaten"
+                else transcribeSamples(samples)
+            } catch (e: Exception) {
+                statusMessage = if (e.message?.contains("extractor", ignoreCase = true) == true)
+                    "Datei nicht lesbar: kein unterstütztes Audio-/Videoformat " +
+                    "(z. B. PDF, Bild oder Textdatei ausgewählt)"
+                else "Fehler: ${e.message}"
+            } finally {
+                busy = false
+            }
+        }
+    }
+
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            // Vorab-Prüfung: nur Audio/Video ist transkribierbar. Manche
-            // Dateiauswahl-Apps zeigen trotz MIME-Filter alles an.
-            val mime = context.contentResolver.getType(uri) ?: ""
-            if (mime.isNotEmpty() && !mime.startsWith("audio/") && !mime.startsWith("video/")) {
-                val name = uri.lastPathSegment?.substringAfterLast('/') ?: mime
-                statusMessage = "„$name" + "“ ist keine Audio-/Videodatei — PDFs, Bilder und Dokumente enthalten keine transkribierbare Sprache."
-                return@rememberLauncherForActivityResult
-            }
-            busy = true
-            statusMessage = "Dekodiere Datei…"
-            scope.launch {
-                try {
-                    val samples = withContext(Dispatchers.IO) {
-                        AudioDecoder.decode(context, uri)
-                    }
-                    durationS = samples.size / AudioRecorder.SAMPLE_RATE.toFloat()
-                    statusMessage = "Transkribiere…"
-                    val t0 = System.currentTimeMillis()
-                    val text = withContext(Dispatchers.Default) {
-                        WhisperBridge.transcribe(samples, language, false)
-                    }
-                    transcript = text.trim()
-                    if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
-                    statusMessage = null
-                } catch (e: Exception) {
-                    statusMessage = if (e.message?.contains("extractor", ignoreCase = true) == true)
-                        "Datei nicht lesbar: kein unterstütztes Audio-/Videoformat " +
-                        "(z. B. PDF, Bild oder Textdatei ausgewählt)"
-                    else "Fehler: ${e.message}"
-                } finally {
-                    busy = false
-                }
-            }
+    ) { uri -> if (uri != null) transcribeUri(uri) }
+
+    // Geteilte Datei übernehmen, sobald ein Modell bereitsteht
+    LaunchedEffect(sharedUri, modelReady, busy, recording) {
+        if (sharedUri != null && modelReady && !busy && !recording) {
+            onSharedConsumed()
+            transcribeUri(sharedUri)
         }
     }
 
@@ -478,19 +534,10 @@ fun App() {
                         } else {
                             val samples = recorder.stop()
                             recording = false
-                            durationS = samples.size / AudioRecorder.SAMPLE_RATE.toFloat()
                             if (samples.isEmpty()) return@Button
                             busy = true
-                            statusMessage = "Transkribiere…"
                             scope.launch {
-                                val t0 = System.currentTimeMillis()
-                                val text = withContext(Dispatchers.Default) {
-                                    WhisperBridge.transcribe(samples, language, false)
-                                }
-                                transcript = text.trim()
-                                if (transcript.isNotEmpty()) recordHistory(transcript, durationS)
-                                statusMessage = null
-                                busy = false
+                                try { transcribeSamples(samples) } finally { busy = false }
                             }
                         }
                     },
@@ -505,7 +552,11 @@ fun App() {
                             if (recording) Icons.Filled.Stop else Icons.Filled.Mic,
                             null, Modifier.size(42.dp)
                         )
-                        Text(if (recording) "Stop" else "Aufnehmen", textAlign = TextAlign.Center)
+                        Text(
+                            if (recording) "Stop %d:%02d".format(recordingSeconds / 60, recordingSeconds % 60)
+                            else "Aufnehmen",
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
 
@@ -887,8 +938,14 @@ fun ModelPickerOverlay(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(f)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(f, Modifier.weight(1f))
+                                if (f == currentFile) {
+                                    Text(
+                                        "✓ Aktiv",
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(onClick = { onActivate(f) }) { Text("Aktivieren") }
                                     OutlinedButton(onClick = { onDelete(f) }) {
                                         Icon(

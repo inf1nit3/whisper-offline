@@ -150,6 +150,26 @@ public partial class MainWindow : Window
         return WhisperCli.Transcribe(wav, Lang, out _).Trim();
     }
 
+    private static bool IsParakeetModel =>
+        Path.GetFileName(WhisperCli.SelectedModel).Contains("parakeet", StringComparison.OrdinalIgnoreCase);
+
+    /// Dateien dekodiert Media Foundation, transkribiert wird mit der geladenen
+    /// Engine — so gehen auch M4A/MP4/WMA und Parakeet-Modelle. whisper-cli
+    /// bleibt Rückfall für Formate, die Windows nicht kennt (z. B. Ogg).
+    private (string Text, float Seconds, string Error) TranscribeFile(string path)
+    {
+        var samples = AudioFileDecoder.TryDecode(path);
+        if (samples != null)
+        {
+            if (samples.Length == 0) return ("", 0, "Die Datei enthält keine Audiodaten.");
+            return (TranscribeSamples(samples), samples.Length / 16000f, "");
+        }
+        if (IsParakeetModel)
+            return ("", 0, "Windows kann dieses Format nicht dekodieren — bitte als MP3, M4A oder WAV speichern.");
+        var text = WhisperCli.Transcribe(path, Lang, out var err);
+        return (text, 0, err);
+    }
+
     // ---------- Hotkey und Hintergrundbetrieb ----------
 
     private void UpdateHotkeyLabel()
@@ -271,6 +291,8 @@ public partial class MainWindow : Window
     private async void ToggleDictation()
     {
         if (busy || pickerOpen || downloading != null || dictating && !recorder.IsRecording) return;
+        // Läuft gerade eine Aufnahme im Hauptfenster, gehört das Mikrofon ihr.
+        if (!dictating && recorder.IsRecording) return;
         if (!File.Exists(WhisperCli.SelectedModel)) return;
 
         if (!dictating)
@@ -303,7 +325,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        AppendTranscript(text);
+        AppendTranscript(text, samples.Length / 16000f);
         if (Clipboard != null) await Clipboard.SetTextAsync(text);
         await Task.Delay(250);              // Zwischenablage settling
         PasteHelper.FocusWindow(dictationTarget);
@@ -753,7 +775,7 @@ public partial class MainWindow : Window
         RecordButton.Content = "🎙  Aufnahme starten";
         StatusLabel.Text = $"Transkribiere {samples.Length / 16000f:F1} s Audio…";
         var result = await Task.Run(() => TranscribeSamples(samples));
-        AppendTranscript(result);
+        AppendTranscript(result, samples.Length / 16000f);
         StatusLabel.Text = $"Fertig ({samples.Length / 16000f:F1} s Audio transkribiert).";
         busy = false;
     }
@@ -769,7 +791,11 @@ public partial class MainWindow : Window
             {
                 new FilePickerFileType("Audio/Video")
                 {
-                    Patterns = new[] { "*.wav", "*.mp3", "*.flac", "*.ogg", "*.m4a", "*.mp4", "*.mkv", "*.webm" }
+                    Patterns = new[]
+                    {
+                        "*.wav", "*.mp3", "*.flac", "*.ogg", "*.m4a", "*.aac", "*.wma", "*.opus",
+                        "*.mp4", "*.mkv", "*.webm", "*.mov", "*.avi",
+                    }
                 },
                 new FilePickerFileType("Alle Dateien") { Patterns = new[] { "*.*" } }
             }
@@ -794,16 +820,17 @@ public partial class MainWindow : Window
         busy = true;
         FileButton.IsEnabled = RecordButton.IsEnabled = false;
         StatusLabel.Text = $"Transkribiere „{Path.GetFileName(path)}“…";
-        var lang = Lang;
-        var result = await Task.Run(() => WhisperCli.Transcribe(path!, lang, out var err)
-                                            + (err.Length > 0 ? $"\n[{err}]" : ""));
-        AppendTranscript(result);
-        StatusLabel.Text = "Fertig.";
+        var (text, seconds, error) = await Task.Run(() => TranscribeFile(path!));
+        AppendTranscript(text, seconds);
+        StatusLabel.Text =
+            error.Length > 0 ? error :
+            text.Trim().Length == 0 ? "Keine Sprache erkannt." :
+            seconds > 0 ? $"Fertig ({seconds:F1} s Audio transkribiert)." : "Fertig.";
         FileButton.IsEnabled = RecordButton.IsEnabled = true;
         busy = false;
     }
 
-    private void AppendTranscript(string text)
+    private void AppendTranscript(string text, float audioSeconds)
     {
         var t = text.Trim();
         if (t.Length == 0) return;
@@ -815,7 +842,7 @@ public partial class MainWindow : Window
             t,
             Path.GetFileName(WhisperCli.SelectedModel),
             language,
-            0));
+            audioSeconds));
     }
 
     // ---------- Verlauf ----------
@@ -875,7 +902,7 @@ public partial class MainWindow : Window
         });
         head.Children.Add(new TextBlock
         {
-            Text = $"  {e.Model} · {e.Language}",
+            Text = $"  {e.Model} · {e.Language}" + (e.AudioSeconds > 0 ? $" · {e.AudioSeconds:F1} s Audio" : ""),
             FontSize = 12, Foreground = Brushes.Gray,
             VerticalAlignment = VerticalAlignment.Center,
         });

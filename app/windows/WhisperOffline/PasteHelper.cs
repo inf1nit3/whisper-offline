@@ -20,9 +20,25 @@ internal static class PasteHelper
         public IntPtr dwExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    /// MOUSEINPUT muss mit hinein, obwohl nur Tasten gesendet werden: es ist
+    /// das größte Union-Mitglied und bestimmt sizeof(INPUT). Ohne es ist INPUT
+    /// auf x64 32 statt 40 Byte, SendInput verwirft den Aufruf wegen des
+    /// falschen cbSize — Strg+V kam dann nie im Zielfenster an.
     [StructLayout(LayoutKind.Explicit)]
     private struct INPUTUNION
     {
+        [FieldOffset(0)] public MOUSEINPUT mi;
         [FieldOffset(0)] public KEYBDINPUT ki;
     }
 

@@ -19,11 +19,15 @@ data class HistoryEntry(
         SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(timeMs))
 }
 
-/// Transkriptions-Verlauf als JSON-Datei im App-Verzeichnis.
+/// Transkriptions-Verlauf als JSON-Datei im App-Verzeichnis, neueste zuerst.
 object HistoryStore {
+
+    private const val MAX_ENTRIES = 500
 
     private fun file(context: Context) = File(context.filesDir, "history.json")
 
+    /// Sortiert nach Zeit: Dateien aus Versionen bis 2.0 liegen durcheinander,
+    /// weil `add` die Liste bei jedem Eintrag umgedreht hat.
     fun load(context: Context): List<HistoryEntry> =
         runCatching {
             val arr = JSONArray(file(context).readText())
@@ -36,36 +40,31 @@ object HistoryStore {
                     language = o.optString("l"),
                     audioSeconds = o.optDouble("s", 0.0).toFloat(),
                 )
-            }
+            }.sortedByDescending { it.timeMs }
         }.getOrDefault(emptyList())
 
+    /// Haupt-App und Diktat-Overlay schreiben aus verschiedenen Coroutinen.
+    @Synchronized
     fun add(context: Context, entry: HistoryEntry) {
-        val all = load(context).toMutableList()
-        all.add(entry)
-        // Neueste zuerst, maximal 500 Einträge
-        val trimmed = all.takeLast(500).reversed()
+        save(context, (listOf(entry) + load(context)).take(MAX_ENTRIES))
+    }
+
+    @Synchronized
+    fun clear(context: Context) { file(context).delete() }
+
+    @Synchronized
+    fun delete(context: Context, entry: HistoryEntry) {
+        save(context, load(context).filter { it.timeMs != entry.timeMs })
+    }
+
+    private fun save(context: Context, entries: List<HistoryEntry>) {
         JSONArray().apply {
-            trimmed.forEach { e ->
+            entries.forEach { e ->
                 put(JSONObject().apply {
                     put("t", e.timeMs)
                     put("x", e.text)
                     put("m", e.model)
                     put("l", e.language)
-                    put("s", e.audioSeconds.toDouble())
-                })
-            }
-        }.let { file(context).writeText(it.toString()) }
-    }
-
-    fun clear(context: Context) { file(context).delete() }
-
-    fun delete(context: Context, entry: HistoryEntry) {
-        val remaining = load(context).filter { it.timeMs != entry.timeMs }
-        JSONArray().apply {
-            remaining.forEach { e ->
-                put(JSONObject().apply {
-                    put("t", e.timeMs); put("x", e.text)
-                    put("m", e.model); put("l", e.language)
                     put("s", e.audioSeconds.toDouble())
                 })
             }

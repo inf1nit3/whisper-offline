@@ -5,9 +5,30 @@ object WhisperBridge {
         System.loadLibrary("whisper_jni")
     }
 
-    external fun loadModel(path: String, useGpu: Boolean): Boolean
+    // Der Engine-Kern hält genau einen Kontext und sperrt selbst nicht. Haupt-App
+    // und Diktat-Overlay laufen im selben Prozess: ein Modellwechsel während
+    // einer laufenden Transkription gäbe den Kontext unter ihr frei (Absturz).
+    // Laden, Freigeben und Transkribieren laufen deshalb nacheinander.
+    private val lock = Any()
+
+    /// Präfix, mit dem die JNI-Schicht Fehler statt eines Transkripts meldet.
+    private const val ERROR_PREFIX = "[Fehler]"
+
+    fun load(path: String, useGpu: Boolean): Boolean =
+        synchronized(lock) { loadModel(path, useGpu) }
+
+    fun free() = synchronized(lock) { freeModel() }
+
+    /// Transkript der 16-kHz-Mono-Samples; null, wenn die Engine scheitert.
+    /// Wartet, falls gerade ein Modell geladen wird.
+    fun transcribe(samples: FloatArray, language: String): String? =
+        synchronized(lock) {
+            transcribe(samples, language, false).takeUnless { it.startsWith(ERROR_PREFIX) }
+        }
+
+    private external fun loadModel(path: String, useGpu: Boolean): Boolean
     external fun isModelLoaded(): Boolean
-    external fun freeModel()
+    private external fun freeModel()
 
     /// "CPU · 8 Threads" bzw. "GPU (Vulkan) · 8 Threads" — für die Statuszeile.
     external fun backendInfo(): String
@@ -35,5 +56,5 @@ object WhisperBridge {
     external fun lastError(): String
 
     /// [shortCtx] kürzt das 30-s-Encoder-Fenster auf die tatsächliche Audiolänge.
-    external fun transcribe(samples: FloatArray, language: String, shortCtx: Boolean): String
+    private external fun transcribe(samples: FloatArray, language: String, shortCtx: Boolean): String
 }

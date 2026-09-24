@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.1
+
+- Android: Audio aus anderen Apps über „Teilen“ transkribieren — z. B.
+  WhatsApp-Sprachnachricht lange drücken → Teilen → Scheisssewasser's Whisper
+- Android: Datei-Transkription repariert und robuster — M4A/HE-AAC mit
+  richtiger Geschwindigkeit, lange Dateien ohne Speicherüberlauf,
+  Fortschritt in Prozent beim Dekodieren
+- Windows: Diktat fügt den Text jetzt wirklich per Strg+V ins Zielfenster
+  ein (vorher landete er nur in der Zwischenablage)
+- Windows: Datei-Transkription nutzt das bereits geladene Modell — schneller,
+  funktioniert mit Parakeet und zusätzlich mit M4A, MP4, AAC, WMA, MOV, AVI
+- Verlauf: Einträge stehen wieder zuverlässig neueste zuerst (bisher geriet
+  die Reihenfolge bei jedem neuen Eintrag durcheinander), mit Audiodauer
+- Aufnahmedauer läuft sichtbar mit (Hauptfenster und Diktat-Overlay)
+- Diktat-Overlay (Android): hängt nicht mehr nach dem Erteilen der
+  Mikrofon-Berechtigung, lässt sich jederzeit abbrechen, und das Mikrofon
+  wird beim Verlassen sofort freigegeben
+- Modellwechsel während einer laufenden Transkription führt nicht mehr zum
+  Absturz; Engine-Fehler landen nicht mehr als „Transkript“ im Verlauf
+
 ## v2.0
 
 - Parakeet v3 ist wieder im Modell-Angebot: die schnellste Engine (jetzt mit der

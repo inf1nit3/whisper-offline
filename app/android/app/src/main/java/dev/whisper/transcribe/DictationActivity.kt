@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -62,6 +63,11 @@ fun DictationUi(modelPath: String) {
     var message by remember { mutableStateOf("Lade Modell…") }
     var resultText by remember { mutableStateOf("") }
     val recorder = remember { AudioRecorder() }
+    fun close() = (context as? ComponentActivity)?.finish()
+
+    // Verlässt der Nutzer den Dialog (Home-Taste, anderer Aufruf), bleibt das
+    // Mikrofon sonst im Hintergrund offen.
+    DisposableEffect(recorder) { onDispose { if (recorder.isRecording) recorder.stop() } }
 
     var hasPermission by remember {
         mutableStateOf(
@@ -69,9 +75,16 @@ fun DictationUi(modelPath: String) {
                 == PackageManager.PERMISSION_GRANTED
         )
     }
+    var permissionAsked by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> hasPermission = granted }
+    ) { granted ->
+        hasPermission = granted
+        if (!granted) {
+            state = DictationState.ERROR
+            message = "Ohne Mikrofon-Berechtigung ist kein Diktat möglich"
+        }
+    }
 
     // Das Modell wird parallel zur Aufnahme geladen. Vorher lief das Laden
     // davor — bei kaltem Prozess sprach man also mehrere Sekunden ins Leere,
@@ -81,7 +94,10 @@ fun DictationUi(modelPath: String) {
 
     fun startRecording() {
         if (!hasPermission) {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            if (!permissionAsked) {
+                permissionAsked = true
+                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
             return
         }
         if (recorder.start()) {
@@ -93,12 +109,13 @@ fun DictationUi(modelPath: String) {
             return
         }
         modelJob = scope.async(Dispatchers.IO) {
-            WhisperBridge.loadModel(modelPath, Settings.useGpu(context))
+            WhisperBridge.load(modelPath, Settings.useGpu(context))
         }
     }
 
     fun stopAndTranscribe() {
         val samples = recorder.stop()
+        val audioSeconds = samples.size / AudioRecorder.SAMPLE_RATE.toFloat()
         state = DictationState.TRANSCRIBING
         message = "Transkribiere…"
         scope.launch {
@@ -110,11 +127,14 @@ fun DictationUi(modelPath: String) {
             }
             val t0 = System.currentTimeMillis()
             val text = withContext(Dispatchers.Default) {
-                WhisperBridge.transcribe(samples, Settings.language(context), false)
+                WhisperBridge.transcribe(samples, Settings.language(context))
             }
             val secs = (System.currentTimeMillis() - t0) / 1000f
-            val trimmed = text.trim()
-            if (trimmed.isEmpty()) {
+            val trimmed = text?.trim().orEmpty()
+            if (text == null) {
+                state = DictationState.ERROR
+                message = "Transkription fehlgeschlagen"
+            } else if (trimmed.isEmpty()) {
                 state = DictationState.ERROR
                 message = "Nichts erkannt (${secs.toFixed1(1)} s)"
             } else {
@@ -128,17 +148,34 @@ fun DictationUi(modelPath: String) {
                     text = trimmed,
                     model = modelPath.substringAfterLast('/'),
                     language = Settings.language(context),
-                    audioSeconds = secs,
+                    audioSeconds = audioSeconds,
                 ))
                 Toast.makeText(context, "Text kopiert — jetzt im Chat einfügen", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    LaunchedEffect(Unit) { startRecording() }
+    // Startet sofort und nach erteilter Berechtigung erneut.
+    LaunchedEffect(hasPermission) {
+        if (state == DictationState.PREPARING) startRecording()
+    }
+
+    var recordingSeconds by remember { mutableStateOf(0) }
+    LaunchedEffect(state) {
+        val t0 = System.currentTimeMillis()
+        while (state == DictationState.RECORDING) {
+            recordingSeconds = ((System.currentTimeMillis() - t0) / 1000).toInt()
+            delay(250)
+        }
+    }
 
     AlertDialog(
-        onDismissRequest = {},
+        // Zurück-Taste und Tippen daneben schließen — nur nicht mitten in
+        // Aufnahme oder Transkription, dort ginge das Diktat versehentlich
+        // verloren (dafür gibt es „Abbrechen“).
+        onDismissRequest = {
+            if (state != DictationState.RECORDING && state != DictationState.TRANSCRIBING) close()
+        },
         title = {
             Text(
                 when (state) {
@@ -157,8 +194,8 @@ fun DictationUi(modelPath: String) {
                 if (state == DictationState.RECORDING) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Laufzeit: tippe auf den Button",
-                        style = MaterialTheme.typography.bodySmall,
+                        "%d:%02d".format(recordingSeconds / 60, recordingSeconds % 60),
+                        style = MaterialTheme.typography.headlineSmall,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -177,17 +214,15 @@ fun DictationUi(modelPath: String) {
                     Text("⏹ Fertig")
                 }
                 DictationState.DONE, DictationState.ERROR ->
-                    TextButton(onClick = { (context as? ComponentActivity)?.finish() }) {
-                        Text("Schließen")
-                    }
+                    TextButton(onClick = { close() }) { Text("Schließen") }
                 else -> {}
             }
         },
         dismissButton = {
-            if (state == DictationState.RECORDING) {
+            if (state == DictationState.RECORDING || state == DictationState.PREPARING) {
                 TextButton(onClick = {
-                    recorder.stop()
-                    (context as? ComponentActivity)?.finish()
+                    if (recorder.isRecording) recorder.stop()
+                    close()
                 }) { Text("Abbrechen") }
             }
         }

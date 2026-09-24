@@ -9,17 +9,22 @@ public record HistoryEntry(long TimeMs, string Text, string Model, string Langua
         DateTimeOffset.FromUnixTimeMilliseconds(TimeMs).LocalDateTime.ToString("dd.MM.yyyy HH:mm");
 }
 
-/// Transkriptions-Verlauf als history.json neben der EXE.
+/// Transkriptions-Verlauf als history.json neben der EXE, neueste zuerst.
 public static class HistoryStore
 {
+    private const int MaxEntries = 500;
+
     private static string FilePath => Path.Combine(WhisperCli.BaseDir, "history.json");
 
+    /// Sortiert nach Zeit: Dateien aus Versionen bis 2.0 liegen durcheinander,
+    /// weil Add die Liste bei jedem Eintrag umgedreht hat.
     public static List<HistoryEntry> Load()
     {
         try
         {
             if (!File.Exists(FilePath)) return new();
-            return JsonSerializer.Deserialize<List<HistoryEntry>>(File.ReadAllText(FilePath)) ?? new();
+            var all = JsonSerializer.Deserialize<List<HistoryEntry>>(File.ReadAllText(FilePath)) ?? new();
+            return all.OrderByDescending(e => e.TimeMs).ToList();
         }
         catch { return new(); }
     }
@@ -29,10 +34,9 @@ public static class HistoryStore
         try
         {
             var all = Load();
-            all.Add(entry);
-            all.Reverse();                       // neueste zuerst …
+            all.Insert(0, entry);
             File.WriteAllText(FilePath,
-                JsonSerializer.Serialize(all.Take(500).ToList()));
+                JsonSerializer.Serialize(all.Take(MaxEntries).ToList()));
         }
         catch { } // Verlauf darf nie die Transkription blockieren
     }
