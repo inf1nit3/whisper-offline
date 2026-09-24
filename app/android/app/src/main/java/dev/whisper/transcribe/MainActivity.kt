@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -40,12 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,6 +64,17 @@ class MainActivity : ComponentActivity() {
                 App(sharedUri = sharedUri.value, onSharedConsumed = { sharedUri.value = null })
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        AppVisibility.onStart()
+        TranscriptionService.clearFinished(this)
+    }
+
+    override fun onStop() {
+        AppVisibility.onStop()
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -104,9 +111,15 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
     var modelFile by remember { mutableStateOf<String?>(null) }
     var modelReady by remember { mutableStateOf(false) }
     var recording by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var work by remember { mutableStateOf<Work?>(null) }
-    var transcript by remember { mutableStateOf("") }
+    // Transkriptionen laufen in TranscriptionJobs weiter, auch wenn diese
+    // Aktivität neu erstellt wird — die Oberfläche zeigt nur ihren Zustand.
+    val running by TranscriptionJobs.running.collectAsState()
+    val outcome by TranscriptionJobs.outcome.collectAsState()
+    val busy = running != null
+    val work = running?.let { r ->
+        Work(r.title, r.fraction, r.detail, onCancel = if (r.cancelling) null else ({ TranscriptionJobs.cancel() }))
+    }
+    var transcript by rememberSaveable { mutableStateOf("") }
     var language by remember { mutableStateOf(Settings.language(context)) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var statusIsError by remember { mutableStateOf(false) }
@@ -122,16 +135,6 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
     fun showStatus(message: String?, isError: Boolean = false) {
         statusMessage = message
         statusIsError = isError
-    }
-
-    fun recordHistory(text: String, audioSeconds: Float) {
-        HistoryStore.add(context, HistoryEntry(
-            timeMs = System.currentTimeMillis(),
-            text = text,
-            model = modelFile ?: "",
-            language = if (isParakeet) "" else language,
-            audioSeconds = audioSeconds,
-        ))
     }
 
     // Modell-Auswahl / Download
@@ -308,67 +311,30 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasAudioPermission = granted }
 
-    /// Transkribiert Mikrofon- oder Dateiaudio und zeigt Fortschritt und
-    /// Ergebnis an. Der Balken kombiniert die Engine-Meldung mit einer
-    /// Zeitschätzung, die pro Modell auf diesem Gerät gelernt wird.
-    suspend fun transcribeSamples(samples: FloatArray) {
-        val seconds = samples.size / AudioRecorder.SAMPLE_RATE.toFloat()
-        val model = modelFile ?: ""
-        val gpu = useGpu
-        val parakeet = isParakeet
-        val expected = TranscriptionProgress.expectedMs(context, model, gpu, seconds, parakeet)
-        val title = "Transkribiere ${formatDuration(seconds)} Audio"
-        val cancel = {
-            WhisperBridge.cancel()
-            work = work?.copy(title = "Wird abgebrochen…", onCancel = null)
-        }
-        work = Work(title, onCancel = cancel)
-        val t0 = SystemClock.elapsedRealtime()
-
-        val text = coroutineScope {
-            val ticker = launch {
-                while (isActive) {
-                    val elapsed = SystemClock.elapsedRealtime() - t0
-                    val detail = when {
-                        expected == null -> "läuft seit ${elapsed / 1000} s — erste Messung für dieses Modell"
-                        expected - elapsed > 1500 -> "noch ca. ${(expected - elapsed + 999) / 1000} s"
-                        else -> "gleich fertig …"
-                    }
-                    work = work?.let {
-                        if (it.onCancel == null) it // Abbruch läuft — Anzeige einfrieren
-                        else it.copy(
-                            fraction = TranscriptionProgress.fraction(WhisperBridge.progress(), elapsed, expected),
-                            detail = detail,
-                        )
-                    }
-                    delay(100)
-                }
-            }
-            try {
-                withContext(Dispatchers.Default) { WhisperBridge.transcribe(samples, language) }
-            } finally {
-                ticker.cancel()
-            }
-        }
-        val elapsed = SystemClock.elapsedRealtime() - t0
-        work = null
-
-        if (text == null) {
-            if (WhisperBridge.wasCancelled()) showStatus("Transkription abgebrochen")
-            else showStatus("Transkription fehlgeschlagen — anderes Modell versuchen?", isError = true)
-            return
-        }
-        TranscriptionProgress.record(context, model, gpu, seconds, parakeet, elapsed)
-        transcript = text.trim()
-        if (transcript.isNotEmpty()) {
-            recordHistory(transcript, seconds)
-            showStatus(null)
-        } else {
-            showStatus("Keine Sprache erkannt")
-        }
+    // Ergebnis eines Auftrags übernehmen, sobald es vorliegt — auch wenn es
+    // fertig wurde, während die App im Hintergrund war.
+    LaunchedEffect(outcome) {
+        val o = outcome ?: return@LaunchedEffect
+        o.text?.let { transcript = it }
+        showStatus(o.message, o.isError)
+        TranscriptionJobs.consumeOutcome()
     }
 
-    var currentJob by remember { mutableStateOf<Job?>(null) }
+    // Benachrichtigungen (Fortschritt in der Statusleiste) einmalig erfragen,
+    // beim ersten Auftrag — dann ist klar, wofür.
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+    fun askForNotificationsOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED) return
+        if (prefs.getBoolean("notifications_asked", false)) return
+        prefs.edit().putBoolean("notifications_asked", true).apply()
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    fun setup() = TranscriptionJobs.Setup(modelFile ?: "", useGpu, isParakeet, language)
 
     fun transcribeUri(uri: Uri) {
         // Vorab-Prüfung: nur Audio/Video ist transkribierbar. Manche
@@ -379,34 +345,9 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
             showStatus("„$name“ ist keine Audio-/Videodatei — PDFs, Bilder und Dokumente enthalten keine transkribierbare Sprache.", isError = true)
             return
         }
-        busy = true
         showStatus(null)
-        currentJob = scope.launch {
-            work = Work("Datei wird gelesen", fraction = 0f, onCancel = { currentJob?.cancel() })
-            try {
-                val samples = withContext(Dispatchers.IO) {
-                    AudioDecoder.decode(context, uri) { p ->
-                        ensureActive()
-                        work = work?.copy(fraction = p)
-                    }
-                }
-                if (samples.isEmpty()) showStatus("Die Datei enthält keine Audiodaten", isError = true)
-                else transcribeSamples(samples)
-            } catch (e: CancellationException) {
-                showStatus("Abgebrochen")
-                throw e
-            } catch (e: Exception) {
-                showStatus(
-                    if (e.message?.contains("extractor", ignoreCase = true) == true)
-                        "Datei nicht lesbar: kein unterstütztes Audio-/Videoformat (z. B. PDF, Bild oder Textdatei ausgewählt)"
-                    else "Fehler: ${e.message}",
-                    isError = true,
-                )
-            } finally {
-                work = null
-                busy = false
-            }
-        }
+        askForNotificationsOnce()
+        TranscriptionJobs.startFile(context, uri, setup())
     }
 
     val filePicker = rememberLauncherForActivityResult(
@@ -438,10 +379,8 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
         val samples = recorder.stop()
         recording = false
         if (samples.isEmpty()) return
-        busy = true
-        currentJob = scope.launch {
-            try { transcribeSamples(samples) } finally { busy = false }
-        }
+        askForNotificationsOnce()
+        TranscriptionJobs.startSamples(context, samples, setup())
     }
 
     fun copyTranscript(text: String) {
@@ -599,6 +538,18 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
                                     leadingIcon = { Icon(Icons.Filled.SystemUpdate, null) },
                                     onClick = { menu = false; checkForUpdate(silent = false) },
                                 )
+                                // Ab Android 13 kann die App die Kachel selbst anbieten —
+                                // statt Schnelleinstellungen von Hand bearbeiten.
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) DropdownMenuItem(
+                                    text = { Text("Diktat-Kachel hinzufügen") },
+                                    leadingIcon = { Icon(Icons.Filled.AddBox, null) },
+                                    onClick = {
+                                        menu = false
+                                        requestDictationTile(context) { msg ->
+                                            scope.launch { snackbar.showSnackbar(msg) }
+                                        }
+                                    },
+                                )
                                 // Nur sichtbar, wenn die Engine mit GPU-Backend gebaut wurde.
                                 if (gpuAvailable) DropdownMenuItem(
                                     text = { Text("GPU (Vulkan)") },
@@ -618,121 +569,165 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
                 )
             },
         ) { padding ->
-            Column(
+            // Ab 600 dp Breite (Tablet, Foldable, Handy quer) zweispaltig:
+            // links die Bedienung, rechts das Transkript. Android 17 erzwingt
+            // auf großen Bildschirmen freie Größe und Ausrichtung.
+            BoxWithConstraints(
                 Modifier
                     .padding(padding)
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .padding(horizontal = 16.dp)
             ) {
-                // Modell und Sprache als Chips
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    AssistChip(
-                        onClick = { pickerVisible = true },
-                        enabled = downloadingFile == null && !recording,
-                        label = {
-                            Text(
-                                if (modelLoading) "Lade Modell…" else modelDisplayName(modelFile, manifest),
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                val wide = maxWidth >= 600.dp
+                // Wenig Höhe (Handy quer): kleinerer Knopf, Bedienung scrollbar
+                val compact = maxHeight < 480.dp
+
+                @Composable
+                fun ColumnScope.FlexSpace(weight: Float) {
+                    if (wide && compact) Spacer(Modifier.height(12.dp)) else Spacer(Modifier.weight(weight))
+                }
+
+                val controls: @Composable ColumnScope.() -> Unit = {
+                        // Modell und Sprache als Chips
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            AssistChip(
+                                onClick = { pickerVisible = true },
+                                enabled = downloadingFile == null && !recording,
+                                label = {
+                                    Text(
+                                        if (modelLoading) "Lade Modell…" else modelDisplayName(modelFile, manifest),
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
+                                leadingIcon = {
+                                    if (modelLoading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    else Icon(Icons.Filled.Tune, null, Modifier.size(18.dp))
+                                },
+                                trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) },
+                                modifier = Modifier.weight(1f, fill = false),
                             )
-                        },
-                        leadingIcon = {
-                            if (modelLoading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Filled.Tune, null, Modifier.size(18.dp))
-                        },
-                        trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) },
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    var langExpanded by remember { mutableStateOf(false) }
-                    Box {
-                        AssistChip(
-                            onClick = { langExpanded = true },
-                            enabled = !isParakeet,
-                            label = {
-                                Text(if (isParakeet) "Mehrsprachig"
-                                     else LANGUAGES.first { it.first == language }.second.substringBefore(" ("))
-                            },
-                            leadingIcon = { Icon(Icons.Filled.Translate, null, Modifier.size(18.dp)) },
-                            trailingIcon = if (isParakeet) null else {
-                                { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) }
-                            },
-                        )
-                        DropdownMenu(expanded = langExpanded, onDismissRequest = { langExpanded = false }) {
-                            LANGUAGES.forEach { (code, label) ->
-                                DropdownMenuItem(
-                                    text = { Text(label) },
-                                    trailingIcon = if (code == language) { { Icon(Icons.Filled.Check, null) } } else null,
-                                    onClick = {
-                                        language = code
-                                        Settings.setLanguage(context, code)
-                                        langExpanded = false
+                            var langExpanded by remember { mutableStateOf(false) }
+                            Box {
+                                AssistChip(
+                                    onClick = { langExpanded = true },
+                                    enabled = !isParakeet,
+                                    label = {
+                                        Text(if (isParakeet) "Mehrsprachig"
+                                             else LANGUAGES.first { it.first == language }.second.substringBefore(" ("))
+                                    },
+                                    leadingIcon = { Icon(Icons.Filled.Translate, null, Modifier.size(18.dp)) },
+                                    trailingIcon = if (isParakeet) null else {
+                                        { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) }
                                     },
                                 )
+                                DropdownMenu(expanded = langExpanded, onDismissRequest = { langExpanded = false }) {
+                                    LANGUAGES.forEach { (code, label) ->
+                                        DropdownMenuItem(
+                                            text = { Text(label) },
+                                            trailingIcon = if (code == language) { { Icon(Icons.Filled.Check, null) } } else null,
+                                            onClick = {
+                                                language = code
+                                                Settings.setLanguage(context, code)
+                                                langExpanded = false
+                                            },
+                                        )
+                                    }
+                                }
                             }
                         }
-                    }
+
+                        modelError?.let {
+                            Spacer(Modifier.height(8.dp))
+                            StatusCard(it, isError = true, onDismiss = { modelError = null })
+                        }
+
+                        FlexSpace(0.3f)
+
+                        RecordButton(
+                            size = if (compact) 150.dp else 200.dp,
+                            recording = recording,
+                            level = micLevel,
+                            enabled = modelReady && !busy && downloadingFile == null,
+                            onClick = { toggleRecording() },
+                        )
+                        Text(
+                            when {
+                                recording -> formatClock(recordingSeconds)
+                                !modelReady && !modelLoading -> "Kein Modell geladen"
+                                modelLoading -> "Modell wird geladen…"
+                                else -> "Tippen zum Aufnehmen"
+                            },
+                            style = if (recording) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleMedium,
+                            color = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (recording) {
+                            Text("Tippen zum Beenden", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+                        FilledTonalButton(
+                            onClick = { filePicker.launch(arrayOf("audio/*", "video/*")) },
+                            enabled = modelReady && !busy && !recording && downloadingFile == null,
+                        ) {
+                            Icon(Icons.Filled.AudioFile, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Audiodatei transkribieren")
+                        }
+
+                        FlexSpace(0.2f)
+
+                        AnimatedVisibility(visible = work != null, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                            work?.let { WorkCard(it, Modifier.padding(vertical = 8.dp)) }
+                        }
+                        AnimatedVisibility(visible = work == null && statusMessage != null) {
+                            statusMessage?.let {
+                                StatusCard(it, statusIsError, onDismiss = { showStatus(null) }, Modifier.padding(vertical = 8.dp))
+                            }
+                        }
                 }
 
-                modelError?.let {
-                    Spacer(Modifier.height(8.dp))
-                    StatusCard(it, isError = true, onDismiss = { modelError = null })
-                }
-
-                Spacer(Modifier.weight(0.3f))
-
-                RecordButton(
-                    recording = recording,
-                    level = micLevel,
-                    enabled = modelReady && !busy && downloadingFile == null,
-                    onClick = { toggleRecording() },
-                )
-                Text(
-                    when {
-                        recording -> formatClock(recordingSeconds)
-                        !modelReady && !modelLoading -> "Kein Modell geladen"
-                        modelLoading -> "Modell wird geladen…"
-                        else -> "Tippen zum Aufnehmen"
-                    },
-                    style = if (recording) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleMedium,
-                    color = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (recording) {
-                    Text("Tippen zum Beenden", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-
-                Spacer(Modifier.height(16.dp))
-                FilledTonalButton(
-                    onClick = { filePicker.launch(arrayOf("audio/*", "video/*")) },
-                    enabled = modelReady && !busy && !recording && downloadingFile == null,
-                ) {
-                    Icon(Icons.Filled.AudioFile, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Audiodatei transkribieren")
-                }
-
-                Spacer(Modifier.weight(0.2f))
-
-                AnimatedVisibility(visible = work != null, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                    work?.let { WorkCard(it, Modifier.padding(vertical = 8.dp)) }
-                }
-                AnimatedVisibility(visible = work == null && statusMessage != null) {
-                    statusMessage?.let {
-                        StatusCard(it, statusIsError, onDismiss = { showStatus(null) }, Modifier.padding(vertical = 8.dp))
-                    }
-                }
-
-                TranscriptCard(
+                @Composable
+                fun Transcript(modifier: Modifier) = TranscriptCard(
                     text = transcript,
                     onCopy = { copyTranscript(transcript) },
                     onShare = { shareTranscript() },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(bottom = 16.dp),
+                    modifier = modifier,
                 )
+
+                if (wide) {
+                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .then(if (compact) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+                                .padding(bottom = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            controls()
+                            FlexSpace(0.3f)
+                        }
+                        Transcript(
+                            Modifier
+                                .weight(1.3f)
+                                .fillMaxHeight()
+                                .padding(bottom = 16.dp)
+                        )
+                    }
+                } else {
+                    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        controls()
+                        Transcript(
+                            Modifier
+                                .weight(1f)
+                                .padding(bottom = 16.dp)
+                        )
+                    }
+                }
             }
         }
 
@@ -780,5 +775,27 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
                 }
             )
         }
+    }
+}
+
+/// Bittet das System, die Diktat-Kachel in die Schnelleinstellungen zu legen
+/// (Android 13+). Das System zeigt dafür einen eigenen Bestätigungsdialog.
+@androidx.annotation.RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private fun requestDictationTile(context: Context, onResult: (String) -> Unit) {
+    val sbm = context.getSystemService(android.app.StatusBarManager::class.java) ?: return
+    sbm.requestAddTileService(
+        android.content.ComponentName(context, DictationTileService::class.java),
+        context.getString(R.string.dictate_label),
+        android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_mic),
+        context.mainExecutor,
+    ) { result ->
+        onResult(
+            when (result) {
+                android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED -> "Kachel hinzugefügt — Schnelleinstellungen herunterziehen"
+                android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> "Die Kachel ist schon in den Schnelleinstellungen"
+                android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> "Kachel nicht hinzugefügt"
+                else -> "Das System hat die Anfrage abgelehnt — Kachel bitte von Hand hinzufügen"
+            }
+        )
     }
 }

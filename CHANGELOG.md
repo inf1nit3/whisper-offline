@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.3
+
+- Android 16+: Fortschritt als Live-Update in der Statusleiste und auf dem
+  Sperrbildschirm — mit Prozent und „Abbrechen“. Darunter als normale
+  Fortschrittsbenachrichtigung
+- Transkriptionen laufen weiter, wenn du die App verlässt (Vordergrunddienst);
+  ist sie im Hintergrund fertig geworden, meldet eine Benachrichtigung das
+  Ergebnis. Kurze Aufnahmen bleiben ohne Benachrichtigung
+- Neuer Menüpunkt „Diktat-Kachel hinzufügen“ (ab Android 13): legt die Kachel
+  mit einem Tipp in die Schnelleinstellungen
+- Neues App-Symbol, ab Android 13 als Themen-Icon in deinen Material-You-Farben
+- Tablets, Foldables und Handy quer: zweispaltig — links Aufnahme, rechts
+  Transkript; Modellauswahl, Verlauf und Einführung lesbar zentriert
+
 ## v2.2
 
 - Fortschrittsanzeige beim Transkribieren: Balken mit Prozent und

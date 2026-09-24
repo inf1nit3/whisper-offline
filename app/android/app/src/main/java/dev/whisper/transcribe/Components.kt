@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /// "0:07", "1:23" oder "12,5 s" — kurz und ohne Nachkommastellen ab einer Minute.
@@ -54,6 +55,7 @@ fun RecordButton(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    size: Dp = 200.dp,
 ) {
     val container by animateColorAsState(
         if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
@@ -64,11 +66,11 @@ fun RecordButton(
         animationSpec = tween(120),
         label = "recordRing",
     )
-    Box(modifier.size(200.dp), contentAlignment = Alignment.Center) {
+    Box(modifier.size(size), contentAlignment = Alignment.Center) {
         if (recording) {
             Box(
                 Modifier
-                    .size(148.dp)
+                    .size(size * 0.74f)
                     .scale(ring)
                     .background(container.copy(alpha = 0.18f), CircleShape)
             )
@@ -79,13 +81,13 @@ fun RecordButton(
             shape = CircleShape,
             colors = IconButtonDefaults.filledIconButtonColors(containerColor = container),
             modifier = Modifier
-                .size(136.dp)
+                .size(size * 0.68f)
                 .semantics { contentDescription = if (recording) "Aufnahme beenden" else "Aufnahme starten" },
         ) {
             Icon(
                 if (recording) Icons.Filled.Stop else Icons.Filled.Mic,
                 contentDescription = null,
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(size * 0.28f),
             )
         }
     }

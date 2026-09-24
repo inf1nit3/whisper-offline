@@ -5,9 +5,19 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Lange Transkriptionen laufen als Vordergrunddienst weiter, wenn man die
+         App verlässt, und zeigen ihren Fortschritt in der Statusleiste.
+         mediaProcessing ab Android 15, darunter dataSync. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 16: Fortschritt als Live-Update (Statusleisten-Chip, Sperrbildschirm) -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.Whisper">
 
@@ -85,7 +95,7 @@
             android:name=".DictateLauncher"
             android:targetActivity=".DictationActivity"
             android:label="@string/dictate_label"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@mipmap/ic_launcher"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -95,12 +105,15 @@
 
         <service android:name=".DictationTileService"
             android:label="@string/dictate_label"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@drawable/ic_mic"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+        <service android:name=".TranscriptionService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProcessing|dataSync" />
     </application>
 </manifest>

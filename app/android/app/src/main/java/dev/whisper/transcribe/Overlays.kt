@@ -46,7 +46,14 @@ fun HistoryOverlay(
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-        Column(Modifier.systemBarsPadding()) {
+        // Auf Tablets nicht über die volle Breite — lesbar zentriert
+        Column(
+            Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .widthIn(max = 720.dp)
+        ) {
             OverlayHeader(
                 title = "Verlauf",
                 subtitle = if (entries.isEmpty()) null else "${entries.size} Einträge",
@@ -71,7 +78,7 @@ fun HistoryOverlay(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(entries, key = { it.timeMs }) { e ->
+                    items(entries) { e ->
                         HistoryCard(e, onCopy = { onCopy(e.text) }, onDelete = { onDelete(e) })
                     }
                 }
@@ -137,7 +144,14 @@ fun ModelPickerOverlay(
     onDismiss: () -> Unit,
 ) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-        Column(Modifier.systemBarsPadding()) {
+        // Auf Tablets nicht über die volle Breite — lesbar zentriert
+        Column(
+            Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .widthIn(max = 720.dp)
+        ) {
             OverlayHeader(
                 title = "Modell wählen",
                 subtitle = "Einmaliger Download von scheisssewasser.xyz — danach komplett offline",
@@ -365,6 +379,8 @@ fun OnboardingOverlay(onFinish: () -> Unit) {
             Modifier
                 .fillMaxSize()
                 .systemBarsPadding()
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .widthIn(max = 560.dp)
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
