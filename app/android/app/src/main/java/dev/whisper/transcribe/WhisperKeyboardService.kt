@@ -167,7 +167,7 @@ class WhisperKeyboardService : InputMethodService(), LifecycleOwner, SavedStateR
         phase = KeyboardPhase.RECORDING
         // Modell parallel zur Aufnahme laden; ist es schon geladen, kostet das nichts.
         modelJob = scope.async(Dispatchers.IO) {
-            WhisperBridge.load(path, Settings.useGpu(this@WhisperKeyboardService))
+            WhisperBridge.load(this@WhisperKeyboardService, path, Settings.useGpu(this@WhisperKeyboardService))
         }
         tickerJob = scope.launch {
             val t0 = SystemClock.elapsedRealtime()

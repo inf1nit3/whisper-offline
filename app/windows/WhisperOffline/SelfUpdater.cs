@@ -13,12 +13,18 @@ public static class SelfUpdater
 {
     public static string WorkDir => Path.Combine(Path.GetTempPath(), "whisper_update");
 
+    /// Lädt Zip und Signatur, prüft die Signatur und entpackt erst danach.
+    /// Fehlt die Signatur oder passt sie nicht, wird nichts installiert.
     public static async Task<string> DownloadAndExtractAsync(
-        string zipUrl, IProgress<double>? progress)
+        string zipUrl, string sigUrl, IProgress<double>? progress)
     {
         Directory.CreateDirectory(WorkDir);
         var zipPath = Path.Combine(WorkDir, "update.zip");
         var extractDir = Path.Combine(WorkDir, "files");
+
+        byte[] signature;
+        using (var http = new HttpClient())
+            signature = await http.GetByteArrayAsync(sigUrl);
 
         using (var http = new HttpClient())
         using (var resp = await http.GetAsync(zipUrl, HttpCompletionOption.ResponseHeadersRead))
@@ -36,6 +42,13 @@ public static class SelfUpdater
                 done += n;
                 if (total > 0) progress?.Report((double)done / total * 0.5);
             }
+        }
+
+        if (!UpdateSignature.Verify(zipPath, signature))
+        {
+            File.Delete(zipPath);
+            throw new InvalidOperationException(
+                "Signatur des Updates ungültig — Installation abgebrochen. Bitte manuell von GitHub laden.");
         }
 
         if (Directory.Exists(extractDir)) Directory.Delete(extractDir, true);

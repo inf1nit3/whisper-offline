@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.5
+
+- Stille wird übersprungen: keine erfundenen Sätze mehr aus Pausen oder
+  Rauschen (Whisper „hörte“ dort z. B. „Thank you.“) und schneller bei
+  Aufnahmen mit Pausen — für Whisper-Modelle auf Android und Windows
+- Ersetzungen (⋮ → Ersetzungen): Wörter, die immer wieder falsch erkannt
+  werden, einmal korrigieren — gilt in App, Tastatur und Diktat
+- Transkript bearbeiten (Stift-Symbol); die Änderung landet auch im Verlauf
+- Verlauf durchsuchen und als Textdatei teilen
+- Mehrere Sprachnachrichten auf einmal teilen — sie werden nacheinander
+  transkribiert, jede einzeln im Verlauf
+- Lokales Fehlerprotokoll (⋮ → Fehlerbericht) — bleibt auf dem Gerät, nach
+  einem Absturz weist die App darauf hin
+- Windows: Updates werden ab dieser Version nur noch mit gültiger Signatur
+  installiert — ein verändertes Update-Paket wird abgelehnt
+
 ## v2.4
 
 - **Wichtig:** Absturz behoben — v2.3 beendete sich auf Android 14 und neuer

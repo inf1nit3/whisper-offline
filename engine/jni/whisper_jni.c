@@ -84,6 +84,15 @@ Java_dev_whisper_transcribe_WhisperBridge_detectThreads(JNIEnv *env, jobject thi
     return (jint) we_threads();
 }
 
+JNIEXPORT void JNICALL
+Java_dev_whisper_transcribe_WhisperBridge_setVadModel(JNIEnv *env, jobject thiz, jstring jpath) {
+    (void) thiz;
+    if (jpath == NULL) { we_set_vad_model(NULL); return; }
+    const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
+    we_set_vad_model(path);
+    (*env)->ReleaseStringUTFChars(env, jpath, path);
+}
+
 /// Prozent 0–100 der laufenden Transkription; lock-frei aus dem UI-Thread abfragbar.
 JNIEXPORT jint JNICALL
 Java_dev_whisper_transcribe_WhisperBridge_progress(JNIEnv *env, jobject thiz) {

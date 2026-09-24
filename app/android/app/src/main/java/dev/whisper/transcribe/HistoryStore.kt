@@ -57,6 +57,15 @@ object HistoryStore {
         save(context, load(context).filter { it.timeMs != entry.timeMs })
     }
 
+    /// Bearbeitetes Transkript: den jüngsten Eintrag mit dem alten Text anpassen.
+    @Synchronized
+    fun replaceText(context: Context, oldText: String, newText: String) {
+        val all = load(context)
+        val i = all.indexOfFirst { it.text == oldText }
+        if (i < 0) return
+        save(context, all.toMutableList().also { it[i] = it[i].copy(text = newText) })
+    }
+
     private fun save(context: Context, entries: List<HistoryEntry>) {
         JSONArray().apply {
             entries.forEach { e ->

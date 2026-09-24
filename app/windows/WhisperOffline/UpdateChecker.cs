@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace WhisperOffline;
 
-public record GhRelease(string Tag, string Name, string? ZipUrl, string Body);
+public record GhRelease(string Tag, string Name, string? ZipUrl, string? SigUrl, string Body);
 
 /// Prüft GitHub-Releases auf neuere Versionen (öffentliches Repo, ohne Auth).
 public static class UpdateChecker
@@ -38,19 +38,21 @@ public static class UpdateChecker
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
             var root = doc.RootElement;
 
-            string? zip = null;
+            string? zip = null, sig = null;
             if (root.TryGetProperty("assets", out var assets))
                 foreach (var a in assets.EnumerateArray())
-                    if (a.GetProperty("name").GetString()?.EndsWith(".zip") == true)
-                    {
-                        zip = a.GetProperty("browser_download_url").GetString();
-                        break;
-                    }
+                {
+                    var name = a.GetProperty("name").GetString() ?? "";
+                    var url = a.GetProperty("browser_download_url").GetString();
+                    if (name.EndsWith(".zip")) zip ??= url;
+                    else if (name.EndsWith(".zip.sig")) sig ??= url;
+                }
 
             return new GhRelease(
                 root.GetProperty("tag_name").GetString() ?? "",
                 root.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
                 zip,
+                sig,
                 root.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "");
         }
         catch

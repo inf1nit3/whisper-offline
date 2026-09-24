@@ -116,7 +116,7 @@ fun DictationUi(modelPath: String) {
             return
         }
         modelJob = scope.async(Dispatchers.IO) {
-            WhisperBridge.load(modelPath, Settings.useGpu(context))
+            WhisperBridge.load(context, modelPath, Settings.useGpu(context))
         }
     }
 

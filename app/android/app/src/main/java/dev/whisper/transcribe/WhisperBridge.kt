@@ -1,5 +1,8 @@
 package dev.whisper.transcribe
 
+import android.content.Context
+import java.io.File
+
 object WhisperBridge {
     init {
         System.loadLibrary("whisper_jni")
@@ -14,8 +17,33 @@ object WhisperBridge {
     /// Präfix, mit dem die JNI-Schicht Fehler statt eines Transkripts meldet.
     private const val ERROR_PREFIX = "[Fehler]"
 
-    fun load(path: String, useGpu: Boolean): Boolean =
-        synchronized(lock) { loadModel(path, useGpu) }
+    private const val VAD_ASSET = "vad/ggml-silero-v6.2.0.bin"
+    @Volatile private var vadReady = false
+
+    /// Lädt das Modell und schaltet dabei das Überspringen von Stille (VAD)
+    /// ein. Ohne VAD erfindet Whisper in Stille gern Sätze („Thank you.“).
+    fun load(context: Context, path: String, useGpu: Boolean): Boolean =
+        synchronized(lock) {
+            // Ohne VAD geht es auch — nur mit den bekannten Stille-Fantasien.
+            runCatching { ensureVad(context) }
+                .onFailure { android.util.Log.w("WhisperBridge", "VAD nicht verfügbar", it) }
+            loadModel(path, useGpu)
+        }
+
+    /// ggml braucht einen Dateipfad: das VAD-Modell (885 KB) einmalig aus der
+    /// APK ins App-Verzeichnis kopieren.
+    private fun ensureVad(context: Context) {
+        if (vadReady) return
+        val f = File(context.filesDir, VAD_ASSET)
+        if (!f.exists() || f.length() == 0L) {
+            f.parentFile?.mkdirs()
+            val part = File(f.path + ".part")
+            context.assets.open(VAD_ASSET).use { input -> part.outputStream().use { input.copyTo(it) } }
+            check(part.renameTo(f)) { "VAD-Modell konnte nicht abgelegt werden" }
+        }
+        setVadModel(f.absolutePath)
+        vadReady = true
+    }
 
     fun free() = synchronized(lock) { freeModel() }
 
@@ -28,6 +56,7 @@ object WhisperBridge {
                 .takeUnless { it.startsWith(ERROR_PREFIX) }
                 // Whisper beginnt jedes Segment mit einem Leerzeichen — pro Zeile weg damit.
                 ?.lines()?.joinToString("\n") { it.trim() }
+                ?.let(Replacements::apply)
         }
 
     /// Prozent 0–100 der laufenden Transkription, außerhalb eines Laufs 0.
@@ -43,6 +72,7 @@ object WhisperBridge {
     external fun wasCancelled(): Boolean
 
     private external fun loadModel(path: String, useGpu: Boolean): Boolean
+    private external fun setVadModel(path: String?)
     external fun isModelLoaded(): Boolean
     private external fun freeModel()
 

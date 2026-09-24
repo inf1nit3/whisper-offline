@@ -771,6 +771,12 @@ public partial class MainWindow : Window
             StatusLabel.Text = "Release enthält kein Zip-Paket.";
             return;
         }
+        if (release.SigUrl == null)
+        {
+            // Ohne Signatur lässt sich nicht prüfen, ob das Zip wirklich von uns stammt.
+            StatusLabel.Text = "Release ist nicht signiert — Update bitte manuell von GitHub laden.";
+            return;
+        }
         updateBusy = true;
         UpdateButton.IsEnabled = false;
         try
@@ -785,7 +791,7 @@ public partial class MainWindow : Window
                     StatusLabel.Text = $"Lade {release.Tag} herunter… {v * 100:F0} %";
                 }
             });
-            var srcDir = await Task.Run(() => SelfUpdater.DownloadAndExtractAsync(release.ZipUrl, progress));
+            var srcDir = await Task.Run(() => SelfUpdater.DownloadAndExtractAsync(release.ZipUrl, release.SigUrl, progress));
             StatusLabel.Text = "Installation wird angewendet — App startet neu…";
             SelfUpdater.LaunchUpdater(srcDir);
             await Task.Delay(400); // Skript-Start abwarten

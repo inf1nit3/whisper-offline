@@ -51,6 +51,11 @@ static void locate_backends(void) {
     we_set_backend_dir(path);
 }
 
+/// Silero-VAD-Modell; "" oder NULL schaltet das Überspringen von Stille ab.
+WS_API void ws_set_vad_model(const char *path) {
+    we_set_vad_model(path);
+}
+
 WS_API int ws_load(const char *model_path, int use_gpu) {
     locate_backends();
     return we_load(model_path, use_gpu != 0) ? 1 : 0;

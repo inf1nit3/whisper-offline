@@ -49,19 +49,19 @@ import java.io.File
 
 class MainActivity : ComponentActivity() {
 
-    /// Über „Teilen“ empfangene Audio-/Videodatei, z. B. eine Sprachnachricht
+    /// Über „Teilen“ empfangene Audio-/Videodateien, z. B. Sprachnachrichten
     /// aus WhatsApp. Die App transkribiert sie, sobald ein Modell bereitsteht.
-    private val sharedUri = mutableStateOf<Uri?>(null)
+    private val sharedUris = mutableStateOf<List<Uri>>(emptyList())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Settings.migrate(this)
         // Nach einer Neuerstellung (etwa Dunkelmodus) nicht erneut transkribieren.
-        if (savedInstanceState == null) sharedUri.value = incomingUri(intent)
+        if (savedInstanceState == null) sharedUris.value = incomingUris(intent)
         enableEdgeToEdge()
         setContent {
             WhisperTheme {
-                App(sharedUri = sharedUri.value, onSharedConsumed = { sharedUri.value = null })
+                App(sharedUris = sharedUris.value, onSharedConsumed = { sharedUris.value = emptyList() })
             }
         }
     }
@@ -79,13 +79,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        incomingUri(intent)?.let { sharedUri.value = it }
+        incomingUris(intent).takeIf { it.isNotEmpty() }?.let { sharedUris.value = it }
     }
 
-    private fun incomingUri(intent: Intent?): Uri? =
-        if (intent?.action == Intent.ACTION_SEND)
-            IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
-        else null
+    private fun incomingUris(intent: Intent?): List<Uri> = when (intent?.action) {
+        Intent.ACTION_SEND ->
+            listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+        Intent.ACTION_SEND_MULTIPLE ->
+            IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+        else -> emptyList()
+    }
 }
 
 // "Automatisch" kostet einen kompletten zusätzlichen Encoder-Durchlauf zur
@@ -98,7 +101,7 @@ private val LANGUAGES = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
+fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -126,6 +129,9 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
     var showHistory by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(listOf<HistoryEntry>()) }
     var showChangelog by remember { mutableStateOf(false) }
+    var showReplacements by remember { mutableStateOf(false) }
+    var replacementRules by remember { mutableStateOf(Replacements.rules) }
+    var showCrashLog by remember { mutableStateOf(false) }
     var changelogText by remember { mutableStateOf("") }
     var useGpu by remember { mutableStateOf(Settings.useGpu(context)) }
     val gpuAvailable = remember { WhisperBridge.hasGpuBackend() }
@@ -172,7 +178,7 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
         modelReady = false
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                WhisperBridge.load(File(ModelRegistry.modelsDir(context), fileName).absolutePath, useGpu)
+                WhisperBridge.load(context, File(ModelRegistry.modelsDir(context), fileName).absolutePath, useGpu)
             }
             modelLoading = false
             modelReady = ok
@@ -307,6 +313,13 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
     // Update-Check beim Start (still); Dialog erscheint nur bei neuerer Version
     LaunchedEffect(Unit) { checkForUpdate(silent = true) }
 
+    // Nach einem Absturz einmal darauf hinweisen, dass es ein Protokoll gibt
+    LaunchedEffect(Unit) {
+        if (CrashLog.takeNewCrashNotice(context)) {
+            showStatus("Die App ist beim letzten Mal abgestürzt — Details unter ⋮ → Fehlerbericht", isError = true)
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasAudioPermission = granted }
@@ -336,29 +349,22 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
 
     fun setup() = TranscriptionJobs.Setup(modelFile ?: "", useGpu, isParakeet, language)
 
-    fun transcribeUri(uri: Uri) {
-        // Vorab-Prüfung: nur Audio/Video ist transkribierbar. Manche
-        // Dateiauswahl-Apps zeigen trotz MIME-Filter alles an.
-        val mime = context.contentResolver.getType(uri) ?: ""
-        if (mime.isNotEmpty() && !mime.startsWith("audio/") && !mime.startsWith("video/")) {
-            val name = uri.lastPathSegment?.substringAfterLast('/') ?: mime
-            showStatus("„$name“ ist keine Audio-/Videodatei — PDFs, Bilder und Dokumente enthalten keine transkribierbare Sprache.", isError = true)
-            return
-        }
+    fun transcribeUris(uris: List<Uri>) {
         showStatus(null)
         askForNotificationsOnce()
-        TranscriptionJobs.startFile(context, uri, setup())
+        TranscriptionJobs.startFiles(context, uris, setup())
     }
 
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
-    ) { uri -> if (uri != null) transcribeUri(uri) }
+    ) { uri -> if (uri != null) transcribeUris(listOf(uri)) }
 
-    // Geteilte Datei übernehmen, sobald ein Modell bereitsteht
-    LaunchedEffect(sharedUri, modelReady, busy, recording) {
-        if (sharedUri != null && modelReady && !busy && !recording) {
+    // Geteilte Dateien übernehmen, sobald ein Modell bereitsteht
+    LaunchedEffect(sharedUris, modelReady, busy, recording) {
+        if (sharedUris.isNotEmpty() && modelReady && !busy && !recording) {
+            val uris = sharedUris
             onSharedConsumed()
-            transcribeUri(sharedUri)
+            transcribeUris(uris)
         }
     }
 
@@ -464,6 +470,36 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
         )
     }
 
+    if (showCrashLog) {
+        val log = remember { CrashLog.read(context) }
+        AlertDialog(
+            onDismissRequest = { showCrashLog = false },
+            icon = { Icon(Icons.Filled.BugReport, contentDescription = null) },
+            title = { Text("Fehlerbericht") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Bleibt auf dem Gerät. Teilen nur, wenn du ihn jemandem zur Fehlersuche schicken willst.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(log, style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    context.startActivity(Intent.createChooser(
+                        Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, log),
+                        "Fehlerbericht teilen"))
+                }) { Text("Teilen") }
+            },
+            dismissButton = {
+                TextButton(onClick = { CrashLog.clear(context); showCrashLog = false }) { Text("Löschen") }
+            },
+        )
+    }
+
     // Löschen-Dialog für heruntergeladene Modelle
     var confirmDeleteModel by remember { mutableStateOf<String?>(null) }
     var localFiles by remember { mutableStateOf(ModelRegistry.localModelFiles(context).map { it.name }) }
@@ -488,8 +524,9 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
     }
 
     // Zurück-Taste schließt Ansichten statt die App zu beenden
-    BackHandler(enabled = showHistory || (pickerVisible && localFiles.isNotEmpty())) {
+    BackHandler(enabled = showHistory || showReplacements || (pickerVisible && localFiles.isNotEmpty())) {
         when {
+            showReplacements -> showReplacements = false
             showHistory -> showHistory = false
             pickerVisible -> pickerVisible = false
         }
@@ -545,6 +582,16 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
                                         menu = false
                                         setUpKeyboard(context) { msg -> scope.launch { snackbar.showSnackbar(msg) } }
                                     },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Ersetzungen") },
+                                    leadingIcon = { Icon(Icons.Filled.FindReplace, null) },
+                                    onClick = { menu = false; showReplacements = true },
+                                )
+                                if (CrashLog.hasLog(context)) DropdownMenuItem(
+                                    text = { Text("Fehlerbericht") },
+                                    leadingIcon = { Icon(Icons.Filled.BugReport, null) },
+                                    onClick = { menu = false; showCrashLog = true },
                                 )
                                 // Ab Android 13 kann die App die Kachel selbst anbieten —
                                 // statt Schnelleinstellungen von Hand bearbeiten.
@@ -703,6 +750,10 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
                     text = transcript,
                     onCopy = { copyTranscript(transcript) },
                     onShare = { shareTranscript() },
+                    onEdit = { edited ->
+                        HistoryStore.replaceText(context, transcript, edited)
+                        transcript = edited
+                    },
                     modifier = modifier,
                 )
 
@@ -771,6 +822,18 @@ fun App(sharedUri: Uri? = null, onSharedConsumed: () -> Unit = {}) {
                     HistoryStore.clear(context)
                     history = emptyList()
                 },
+                onExport = { exportHistory(context, it) },
+            )
+        }
+
+        if (showReplacements) {
+            ReplacementsOverlay(
+                rules = replacementRules,
+                onChange = {
+                    Replacements.save(context, it)
+                    replacementRules = Replacements.rules
+                },
+                onClose = { showReplacements = false },
             )
         }
 
@@ -824,4 +887,28 @@ private fun setUpKeyboard(context: Context, onHint: (String) -> Unit) {
             Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }
+}
+
+/// Verlauf als Textdatei teilen (neueste zuerst), etwa zum Archivieren.
+private fun exportHistory(context: Context, entries: List<HistoryEntry>) {
+    val text = entries.joinToString("\n\n") { e ->
+        val meta = listOfNotNull(
+            e.dateText(),
+            modelDisplayName(e.model.takeIf { it.isNotBlank() }, null).takeIf { e.model.isNotBlank() },
+            e.language.takeIf { it.isNotBlank() },
+            formatDuration(e.audioSeconds).takeIf { e.audioSeconds > 0 },
+        ).joinToString(" · ")
+        "$meta\n${e.text}"
+    }
+    val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+    val file = File(dir, "Whisper-Verlauf.txt").apply { writeText(text) }
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val send = Intent(Intent.ACTION_SEND)
+        .setType("text/plain")
+        .putExtra(Intent.EXTRA_STREAM, uri)
+        .putExtra(Intent.EXTRA_SUBJECT, "Whisper-Verlauf (${entries.size} Einträge)")
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    // Über ClipData bekommt auch das Teilen-Menü selbst Lesezugriff (Vorschau)
+    send.clipData = android.content.ClipData.newRawUri("Whisper-Verlauf", uri)
+    context.startActivity(Intent.createChooser(send, "Verlauf teilen"))
 }

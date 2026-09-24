@@ -107,6 +107,13 @@ void we_set_log_sink(we_log_sink sink) { g_sink = sink; }
 // Ebene höher. Ohne diesen Hinweis findet ggml nichts.
 static char g_backend_dir[1024] = {0};
 
+static char g_vad_path[1024] = {0};
+
+void we_set_vad_model(const char *path) {
+    if (path == NULL) { g_vad_path[0] = '\0'; return; }
+    snprintf(g_vad_path, sizeof(g_vad_path), "%s", path);
+}
+
 void we_set_backend_dir(const char *dir) {
     if (dir == NULL) { g_backend_dir[0] = '\0'; return; }
     snprintf(g_backend_dir, sizeof(g_backend_dir), "%s", dir);
@@ -460,6 +467,14 @@ char *we_transcribe(const float *samples, int n_samples, const char *lang, bool 
     p.progress_callback = whisper_progress_cb;
     p.encoder_begin_callback = whisper_encoder_begin_cb;
     p.abort_callback = abort_cb;
+
+    // Nur Sprachabschnitte transkribieren. Whisper wurde auf Untertiteln
+    // trainiert und „hört“ in Stille gern Abspannfloskeln.
+    if (g_vad_path[0] != '\0') {
+        p.vad = true;
+        p.vad_model_path = g_vad_path;
+        p.vad_params = whisper_vad_default_params();
+    }
 
     // Passt das Audio in ein 30-s-Fenster, dann in einem Rutsch durchziehen.
     // Sonst kann whisper.cpp das Segment am Zeitstempel des letzten Tokens

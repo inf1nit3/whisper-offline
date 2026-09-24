@@ -14,9 +14,14 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -164,33 +169,59 @@ fun StatusCard(message: String, isError: Boolean, onDismiss: () -> Unit, modifie
     }
 }
 
+/// Transkript mit Kopieren, Teilen und Bearbeiten. Beim Bearbeiten wird der
+/// Text zum Eingabefeld; der Haken übernimmt die Änderung.
 @Composable
 fun TranscriptCard(
     text: String,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onEdit: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var editing by rememberSaveable { mutableStateOf(false) }
+    // Cursor ans Ende — man ergänzt meist etwas oder korrigiert den Schluss
+    var draft by remember(text, editing) { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(editing) { if (editing) focus.requestFocus() }
     ElevatedCard(modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Transkript", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                if (text.isNotEmpty()) {
-                    IconButton(onClick = onCopy) { Icon(Icons.Filled.ContentCopy, contentDescription = "Kopieren") }
-                    IconButton(onClick = onShare) { Icon(Icons.Filled.Share, contentDescription = "Teilen") }
-                } else {
-                    Spacer(Modifier.height(48.dp))
+                when {
+                    editing -> {
+                        TextButton(onClick = { editing = false }) { Text("Verwerfen") }
+                        IconButton(onClick = { onEdit(draft.text.trim()); editing = false }) {
+                            Icon(Icons.Filled.Check, contentDescription = "Änderungen übernehmen",
+                                tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    text.isNotEmpty() -> {
+                        IconButton(onClick = { editing = true }) { Icon(Icons.Filled.Edit, contentDescription = "Bearbeiten") }
+                        IconButton(onClick = onCopy) { Icon(Icons.Filled.ContentCopy, contentDescription = "Kopieren") }
+                        IconButton(onClick = onShare) { Icon(Icons.Filled.Share, contentDescription = "Teilen") }
+                    }
+                    else -> Spacer(Modifier.height(48.dp))
                 }
             }
-            if (text.isEmpty()) {
-                EmptyState(
+            when {
+                editing -> OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(end = 12.dp)
+                        .focusRequester(focus),
+                )
+                text.isEmpty() -> EmptyState(
                     icon = Icons.AutoMirrored.Outlined.Notes,
                     title = "Noch keine Transkription",
                     hint = "Aufnehmen, eine Datei wählen oder eine Sprachnachricht aus WhatsApp & Co. hierher teilen.",
                     modifier = Modifier.padding(end = 12.dp),
                 )
-            } else {
-                SelectionContainer(Modifier.padding(end = 12.dp)) {
+                else -> SelectionContainer(Modifier.padding(end = 12.dp)) {
                     Text(
                         text,
                         style = MaterialTheme.typography.bodyLarge,

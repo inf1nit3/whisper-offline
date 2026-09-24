@@ -33,6 +33,11 @@ else
     cp "$ROOT"/dist/windows/*.dll "$OUT/engine/"
 fi
 
+# Silero-VAD (MIT-Lizenz): Whisper überspringt damit Stille. Gleiche Datei
+# wie in den Android-Assets.
+cp "$ROOT/app/android/app/src/main/assets/vad/ggml-silero-v6.2.0.bin" "$OUT/engine/"
+cp "$ROOT/app/android/app/src/main/assets/vad/LICENSE-silero-vad.txt" "$OUT/engine/"
+
 # 3. Modellordner anlegen — Modelle kommen beim ersten Start vom VPS
 #    (siehe server/README-server.md). Zum Bündeln einfach .bin-Dateien hier kopieren.
 mkdir -p "$OUT/models"

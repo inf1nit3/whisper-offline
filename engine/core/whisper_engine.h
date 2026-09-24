@@ -38,6 +38,12 @@ void we_set_log_sink(we_log_sink sink);
 /// nur im EXE-Verzeichnis und im Arbeitsverzeichnis, nicht neben der DLL.
 void we_set_backend_dir(const char *dir);
 
+/// Pfad zum Silero-VAD-Modell (ggml). Gesetzt, überspringt Whisper Stille:
+/// schneller bei Pausen und keine erfundenen Sätze aus reiner Stille
+/// („Thank you.“, „Untertitel im Auftrag des ZDF“). NULL oder "" schaltet ab.
+/// Parakeet braucht das nicht und ignoriert es.
+void we_set_vad_model(const char *path);
+
 /// Lädt das Modell. Ist dasselbe Modell mit derselben GPU-Einstellung bereits
 /// geladen, passiert nichts (kein erneutes Lesen von 180+ MB).
 /// Gibt false zurück, wenn die CPU die nötigen Erweiterungen nicht hat oder

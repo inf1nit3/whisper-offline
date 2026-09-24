@@ -70,6 +70,13 @@ public static class WhisperNative
     private static extern int ws_engine_kind();
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void ws_set_vad_model([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+
+    /// Silero-VAD-Modell neben den Engine-DLLs: Whisper überspringt damit
+    /// Stille und erfindet dort keine Sätze mehr („Thank you.“ u. ä.).
+    private const string VadModel = "ggml-silero-v6.2.0.bin";
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern int ws_progress();
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
@@ -139,6 +146,8 @@ public static class WhisperNative
         lock (gate)
         {
             if (loadedModel == modelPath && ws_is_loaded() != 0) return true;
+            var vad = Path.Combine(WhisperCli.EngineDir, VadModel);
+            if (File.Exists(vad)) Optional(() => { ws_set_vad_model(vad); return 0; }, 0);
             if (ws_load(modelPath, 0) == 0) return false;
             loadedModel = modelPath;
             return true;
