@@ -114,6 +114,21 @@ void we_set_vad_model(const char *path) {
     snprintf(g_vad_path, sizeof(g_vad_path), "%s", path);
 }
 
+// Whisper nutzt höchstens n_text_ctx/2 = 224 Prompt-Tokens; 2 KB Text reichen
+// dafür deutlich, der Rest würde ohnehin abgeschnitten.
+static char g_prompt[2048] = {0};
+static bool g_translate = false;
+static char g_last_lang[16] = {0};
+
+void we_set_prompt(const char *prompt) {
+    if (prompt == NULL) { g_prompt[0] = '\0'; return; }
+    snprintf(g_prompt, sizeof(g_prompt), "%s", prompt);
+}
+
+void we_set_translate(bool translate) { g_translate = translate; }
+
+const char *we_last_language(void) { return g_last_lang; }
+
 void we_set_backend_dir(const char *dir) {
     if (dir == NULL) { g_backend_dir[0] = '\0'; return; }
     snprintf(g_backend_dir, sizeof(g_backend_dir), "%s", dir);
@@ -430,6 +445,7 @@ static char *transcribe_parakeet(const float *samples, int n_samples) {
     p.abort_callback = abort_cb;
 
     g_last_audio_ctx = 0; // kein festes Fenster
+    g_last_lang[0] = '\0'; // Parakeet meldet keine Sprache
 
     parakeet_reset_timings(g_pk);
     const int rc = parakeet_full(g_pk, p, samples, n_samples);
@@ -457,7 +473,7 @@ char *we_transcribe(const float *samples, int n_samples, const char *lang, bool 
     p.strategy = WHISPER_SAMPLING_GREEDY;
     p.n_threads = we_threads();
     p.language = lang;
-    p.translate = false;
+    p.translate = g_translate;
     p.print_progress = false;
     p.print_special = false;
     p.print_realtime = false;
@@ -476,6 +492,14 @@ char *we_transcribe(const float *samples, int n_samples, const char *lang, bool 
         p.vad_params = whisper_vad_default_params();
     }
 
+    // Eigene Wörter als Prompt: Der Decoder hat sie dann schon „gesehen“ und
+    // schreibt Namen und Fachbegriffe eher so. Bei VAD und mehreren
+    // 30-s-Fenstern soll das für jedes Fenster gelten, nicht nur das erste.
+    if (g_prompt[0] != '\0') {
+        p.initial_prompt = g_prompt;
+        p.carry_initial_prompt = true;
+    }
+
     // Passt das Audio in ein 30-s-Fenster, dann in einem Rutsch durchziehen.
     // Sonst kann whisper.cpp das Segment am Zeitstempel des letzten Tokens
     // beenden, `seek` dorthin setzen und ein weiteres volles Fenster encodieren.
@@ -489,6 +513,12 @@ char *we_transcribe(const float *samples, int n_samples, const char *lang, bool 
     whisper_reset_timings(g_ctx);
     const int rc = whisper_full(g_ctx, p, samples, n_samples);
     end_run(rc);
+
+    if (rc == 0) {
+        const int id = whisper_full_lang_id(g_ctx);
+        const char *code = id >= 0 ? whisper_lang_str(id) : NULL;
+        snprintf(g_last_lang, sizeof(g_last_lang), "%s", code != NULL ? code : lang);
+    }
 
     g_log_len = 0;
     g_log[0] = '\0';

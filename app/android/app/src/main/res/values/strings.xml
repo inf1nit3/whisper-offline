@@ -8,4 +8,6 @@
     <string name="keyboard_subtype">Spracheingabe (offline)</string>
     <string name="channel_progress">Laufende Transkription</string>
     <string name="channel_done">Fertige Transkriptionen</string>
+    <string name="channel_meeting">Meeting-Aufnahme</string>
+    <string name="process_text_label">Whisper umformen</string>
 </resources>

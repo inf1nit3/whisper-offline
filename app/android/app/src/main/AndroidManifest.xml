@@ -14,12 +14,24 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Android 16: Fortschritt als Live-Update (Statusleisten-Chip, Sperrbildschirm) -->
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <!-- Meeting-Modus: Aufnahme läuft weiter, wenn der Bildschirm ausgeht -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- App-Profile: installierte Apps zur Auswahl auflisten (Android 11+) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:name=".WhisperApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:largeHeap="true"
         android:theme="@style/Theme.Whisper">
 
         <provider
@@ -126,6 +138,23 @@
             </intent-filter>
             <meta-data android:name="android.view.im" android:resource="@xml/method" />
         </service>
+
+        <!-- „Umformen“ im Textauswahl-Menü jeder App -->
+        <activity android:name=".ProcessTextActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Whisper.Overlay"
+            android:label="@string/process_text_label">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <service android:name=".MeetingService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|mediaProcessing|dataSync" />
 
         <service android:name=".TranscriptionService"
             android:exported="false"

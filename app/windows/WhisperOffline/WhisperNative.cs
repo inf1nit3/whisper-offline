@@ -77,6 +77,24 @@ public static class WhisperNative
     private const string VadModel = "ggml-silero-v6.2.0.bin";
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void ws_set_prompt([MarshalAs(UnmanagedType.LPUTF8Str)] string prompt);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void ws_set_translate(int translate);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr ws_last_language();
+
+    /// Eigene Wörter als Whisper-Prompt; "" schaltet ab.
+    public static void SetPrompt(string prompt) => Optional(() => { ws_set_prompt(prompt); return 0; }, 0);
+
+    /// Ins Englische übersetzen (nur Whisper).
+    public static void SetTranslate(bool on) => Optional(() => { ws_set_translate(on ? 1 : 0); return 0; }, 0);
+
+    /// Sprache des letzten Laufs ("de", "en" …); leer bei Parakeet.
+    public static string LastLanguage => Optional(() => Marshal.PtrToStringUTF8(ws_last_language()) ?? "", "");
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern int ws_progress();
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]

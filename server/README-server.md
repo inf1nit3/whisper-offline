@@ -45,8 +45,26 @@ Format: `https://dein-vps.example/whisper/models.json`
 Die Modell-Dateien liegen im selben Verzeichnis wie das Manifest
 (URL = Manifest-Verzeichnis + `file`-Feld aus dem Manifest).
 
+## Sprachmodelle und Meeting-Modelle (ab App 3.0)
+
+`models.json` hat zwei weitere Listen:
+
+- `llm` — Sprachmodelle für Enhance (GGUF), z. B. Qwen3 4B Instruct
+- `meeting` — Sprechertrennung: pyannote-Segmentierung und WeSpeaker-Stimmabdruck
+
+Beide Einträge tragen ein `url`-Feld: Die Apps laden dann direkt von dort
+(Hugging Face bzw. GitHub), mit SHA-256-Prüfung. Wer alles vom eigenen Server
+ausliefern will, legt die Dateien neben `models.json` und entfernt das `url`-Feld.
+
+Damit die Apps die neuen Kataloge sehen, muss nur die neue `models.json`
+auf den Server:
+
+```bash
+rsync -avP server/models.json USER@VPS:/var/www/whisper/
+```
+
 ## Manifest erweitern
 
 Neue Modelle einfach als weiteren Eintrag in `models.json` aufnehmen
-(`file`, `label`, `tagline`, `size`, `sha256`, `pros[]`, `cons[]`).
+(`file`, `label`, `tagline`, `size`, `sha256`, `pros[]`, `cons[]`, optional `url`).
 Die Apps zeigen sie automatisch an. Ohne `sha256` wird die Prüfung übersprungen.

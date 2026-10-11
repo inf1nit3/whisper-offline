@@ -3,7 +3,9 @@ using System.Text.Json;
 
 namespace WhisperOffline;
 
-public record HistoryEntry(long TimeMs, string Text, string Model, string Language, float AudioSeconds)
+/// Source: "app" (Aufnahme im Fenster), "dictation" (Hotkey), "file", "meeting", "selection".
+public record HistoryEntry(long TimeMs, string Text, string Model, string Language, float AudioSeconds,
+    string Source = "app")
 {
     public string DateText =>
         DateTimeOffset.FromUnixTimeMilliseconds(TimeMs).LocalDateTime.ToString("dd.MM.yyyy HH:mm");
@@ -15,6 +17,9 @@ public static class HistoryStore
     private const int MaxEntries = 500;
 
     private static string FilePath => Path.Combine(WhisperCli.BaseDir, "history.json");
+
+    /// Aus = nichts wird gespeichert (Einstellung „Verlauf speichern“).
+    public static bool Enabled { get; set; } = true;
 
     /// Sortiert nach Zeit: Dateien aus Versionen bis 2.0 liegen durcheinander,
     /// weil Add die Liste bei jedem Eintrag umgedreht hat.
@@ -31,6 +36,7 @@ public static class HistoryStore
 
     public static void Add(HistoryEntry entry)
     {
+        if (!Enabled) return;
         try
         {
             var all = Load();
@@ -47,6 +53,20 @@ public static class HistoryStore
         {
             File.WriteAllText(FilePath,
                 JsonSerializer.Serialize(Load().Where(x => x.TimeMs != e.TimeMs).ToList()));
+        }
+        catch { }
+    }
+
+    /// Bearbeitetes Transkript: den jüngsten Eintrag mit dem alten Text anpassen.
+    public static void ReplaceText(string oldText, string newText)
+    {
+        try
+        {
+            var all = Load();
+            int i = all.FindIndex(e => e.Text == oldText);
+            if (i < 0) return;
+            all[i] = all[i] with { Text = newText };
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(all));
         }
         catch { }
     }

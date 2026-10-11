@@ -66,6 +66,21 @@ public static class HotkeySpec
         };
     }
 
+    /// Einzeltasten, die sich als Diktat-Auslöser eignen (allein gedrückt).
+    public static readonly (uint Vk, string Name)[] SingleKeys =
+    {
+        (0, "aus"),
+        (0xA3, "Rechte Strg"),
+        (0xA5, "Rechte Alt / AltGr"),
+        (0xA1, "Rechte Umschalt"),
+        (0x5C, "Rechte Windows-Taste"),
+        (0x13, "Pause"),
+        (0x7C, "F13"),
+    };
+
+    public static string DescribeSingle(uint vk) =>
+        SingleKeys.FirstOrDefault(k => k.Vk == vk).Name ?? $"Taste 0x{vk:X2}";
+
     /// "Strg + Alt + Leertaste"
     public static string Describe(uint modifiers, uint vk)
     {

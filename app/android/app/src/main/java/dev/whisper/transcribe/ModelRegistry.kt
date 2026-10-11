@@ -17,6 +17,8 @@ data class ModelInfo(
     val sha256: String?,
     val pros: List<String>,
     val cons: List<String>,
+    /// Absolute Download-Adresse; fehlt sie, liegt die Datei neben dem Manifest.
+    val url: String? = null,
 ) {
     fun sizeText(): String =
         if (size >= 1L shl 30) "%.1f GB".format(size / 1073741824.0)
@@ -34,9 +36,19 @@ object ModelRegistry {
     fun localModelFiles(context: Context): List<File> =
         modelsDir(context).listFiles()?.filter { it.name.endsWith(".bin") } ?: emptyList()
 
-    fun fetchManifest(): List<ModelInfo> {
-        val json = fetchText(ModelConfig.MANIFEST_URL)
-        val arr = JSONObject(json).getJSONArray("models")
+    /// Alles, was das Manifest anbietet: Spracherkennung, Sprachmodelle für
+    /// Enhance und Zusatzmodelle für den Meeting-Modus.
+    data class Catalog(val models: List<ModelInfo>, val llms: List<ModelInfo>, val meeting: List<ModelInfo>)
+
+    fun fetchManifest(): List<ModelInfo> = fetchCatalog().models
+
+    fun fetchCatalog(): Catalog {
+        val root = JSONObject(fetchText(ModelConfig.MANIFEST_URL))
+        return Catalog(parse(root.optJSONArray("models")), parse(root.optJSONArray("llm")), parse(root.optJSONArray("meeting")))
+    }
+
+    private fun parse(arr: org.json.JSONArray?): List<ModelInfo> {
+        if (arr == null) return emptyList()
         val out = ArrayList<ModelInfo>(arr.length())
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
@@ -53,6 +65,7 @@ object ModelRegistry {
                     cons = o.optJSONArray("cons")?.let { a ->
                         List(a.length()) { a.getString(it) }
                     } ?: emptyList(),
+                    url = o.optString("url").ifEmpty { null },
                 )
             )
         }
@@ -67,13 +80,19 @@ object ModelRegistry {
         info: ModelInfo,
         context: Context,
         onProgress: (Long, Long) -> Unit,
-    ): File {
-        val dest = File(modelsDir(context), info.file)
+    ): File = download(info, modelsDir(context), onProgress)
+
+    /// Wie [downloadModel], aber in ein beliebiges Verzeichnis (Sprachmodelle,
+    /// Meeting-Modelle). Folgt Weiterleitungen (Hugging Face → CDN).
+    fun download(info: ModelInfo, dir: File, onProgress: (Long, Long) -> Unit): File {
+        dir.mkdirs()
+        val dest = File(dir, info.file)
         val part = File(dest.absolutePath + ".part")
-        val url = URL(baseUrl() + info.file)
+        val url = URL(info.url ?: (baseUrl() + info.file))
         val conn = url.openConnection() as HttpURLConnection
         conn.connectTimeout = 15000
         conn.readTimeout = 60000
+        conn.instanceFollowRedirects = true
         try {
             if (conn.responseCode !in 200..299) {
                 throw ModelDownloadException("Server antwortete ${conn.responseCode}")

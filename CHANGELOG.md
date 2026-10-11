@@ -1,5 +1,70 @@
 # Changelog
 
+## v3.0
+
+Großes Update — alles läuft weiterhin lokal auf deinem Gerät.
+
+**Besser erkennen**
+- Eigene Wörter (⋮ → Wörterbuch): Namen und Fachbegriffe in der gewünschten
+  Schreibweise. Whisper bekommt sie vorab mit und schreibt sie richtig;
+  ähnlich Klingendes („Scheiße Wasser“) wird danach korrigiert
+- Snippets: nur die Trigger-Phrase sagen („meine Adresse“), und der
+  hinterlegte Text wird eingefügt
+- Sprachbefehle: „Komma“, „Punkt“, „Fragezeichen“, „neue Zeile“,
+  „neuer Absatz“ werden beim Diktieren umgesetzt
+- Ins Englische übersetzen (Whisper-Modelle)
+- Live-Transkription (Einstellungen): Text erscheint schon beim Sprechen,
+  das Ergebnis steht nach dem Stoppen fast sofort da
+
+**Enhance — Text verbessern mit einem lokalen Sprachmodell**
+- Sprachmodell einmalig laden (Einstellungen → Sprachmodell), Empfehlung
+  Qwen3 4B; danach räumt es Diktate auf: Füllwörter raus, Selbstkorrekturen,
+  Zeichensetzung, Absätze, Listen
+- Formatiert passend zur App: Chat, E-Mail, Notiz, Dokument, Code,
+  Aufgabenliste — automatisch erkannt (Android: Diktat-Tastatur, Windows:
+  Programm bzw. Fenstertitel), pro App einstellbar oder ausschließbar
+- Umformen: Text verbessern, kürzen, ausführlicher, professioneller,
+  lockerer, Rechtschreibung, Aufzählung, Aufgabenliste, übersetzen oder eine
+  eigene Anweisung (getippt oder gesprochen) — am Transkript (✨), in jeder
+  Android-App über das Textauswahl-Menü („Whisper umformen“), in der
+  Diktat-Tastatur über „Auswahl bearbeiten“ und unter Windows per Hotkey
+- Windows: statt des lokalen Modells auch ein eigener Befehl möglich
+  (z. B. Claude Code, Codex, Gemini) — mit Testknopf und Hinweis, dass der
+  Text dann zum Anbieter geht
+- Eigener System-Prompt für Enhance
+
+**Meeting-Modus**
+- Lange Gespräche aufnehmen, nach Sprechern getrennt transkribieren,
+  Redezeit je Person, Suche, Notizen (Zusammenfassung, Entscheidungen,
+  Aufgaben, offene Fragen), Export als PDF
+- Sprecher umbenennen, zusammenführen und Stimmen merken — in späteren
+  Meetings werden sie automatisch erkannt
+- Android: Aufnahme läuft auch bei ausgeschaltetem Bildschirm weiter;
+  Windows: Mikrofon und Systemaudio (Calls) getrennt, du bist „Ich“
+- Unterbrochene Aufnahmen bleiben erhalten und lassen sich später auswerten
+- Sprechererkennung: zwei kleine Zusatzmodelle (28 MB), einmalig zu laden
+
+**Diktat**
+- Töne bei Start, Ende und Fehlern; andere Wiedergabe wird während der
+  Aufnahme leiser; Mikrofon wählbar
+- Android-Tastatur: in Passwortfeldern gesperrt; pro App „nach dem Diktat
+  automatisch senden“
+- Windows: Push-to-Talk (Taste gedrückt halten), Einzeltaste als Auslöser
+  (z. B. rechte Strg), zweiter Hotkey „Diktat + Enhance“, Overlay unten am
+  Bildschirm, Zwischenablage bleibt nach dem Einfügen erhalten, Enter nach
+  dem Einfügen für ausgewählte Programme
+
+**Verlauf und Statistik**
+- Statistik: Wörter pro Tag, gesprochene Zeit, gesparte Zeit, Sprachen,
+  nach Quelle (Diktat, Datei, Meeting)
+- Verlauf filtern (7/30 Tage), sortieren, abschaltbar
+- Windows: Verlauf durchsuchen, Ersetzungen, Stapel-Transkription vieler
+  Dateien in einen Zielordner (pausiert, solange du diktierst)
+
+**Behoben**
+- Windows: Im Paket fehlte libwinpthread-1.dll — die Engine konnte sich auf
+  Rechnern ohne MinGW deshalb nicht laden
+
 ## v2.5
 
 - Stille wird übersprungen: keine erfundenen Sätze mehr aus Pausen oder

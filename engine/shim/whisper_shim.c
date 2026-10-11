@@ -56,6 +56,19 @@ WS_API void ws_set_vad_model(const char *path) {
     we_set_vad_model(path);
 }
 
+/// Eigene Wörter als Whisper-Prompt; "" oder NULL schaltet ab.
+WS_API void ws_set_prompt(const char *prompt) {
+    we_set_prompt(prompt);
+}
+
+/// 1 = ins Englische übersetzen (nur Whisper).
+WS_API void ws_set_translate(int translate) {
+    we_set_translate(translate != 0);
+}
+
+/// Sprache des letzten Laufs ("de", "en" …); leer bei Parakeet.
+WS_API const char *ws_last_language(void) { return we_last_language(); }
+
 WS_API int ws_load(const char *model_path, int use_gpu) {
     locate_backends();
     return we_load(model_path, use_gpu != 0) ? 1 : 0;

@@ -9,5 +9,8 @@ class WhisperApp : Application() {
         super.onCreate()
         CrashLog.install(this)
         Replacements.init(this)
+        Vocabulary.init(this)
+        Snippets.init(this)
+        AppProfiles.init(this)
     }
 }

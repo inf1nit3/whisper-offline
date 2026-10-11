@@ -14,7 +14,21 @@ data class HistoryEntry(
     val model: String,
     val language: String,
     val audioSeconds: Float,
+    /// Woher der Eintrag stammt — für Filter und Statistik.
+    val source: String = SOURCE_APP,
 ) {
+    companion object {
+        const val SOURCE_APP = "app"
+        const val SOURCE_FILE = "file"
+        const val SOURCE_KEYBOARD = "keyboard"
+        const val SOURCE_DICTATION = "dictation"
+        const val SOURCE_MEETING = "meeting"
+        const val SOURCE_SELECTION = "selection"
+    }
+
+    /// Wörter im Transkript (für Statistik).
+    val words: Int get() = text.split(Regex("""\s+""")).count { w -> w.any { it.isLetterOrDigit() } }
+
     fun dateText(): String =
         SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(timeMs))
 }
@@ -39,13 +53,16 @@ object HistoryStore {
                     model = o.optString("m"),
                     language = o.optString("l"),
                     audioSeconds = o.optDouble("s", 0.0).toFloat(),
+                    source = o.optString("src").ifEmpty { HistoryEntry.SOURCE_APP },
                 )
             }.sortedByDescending { it.timeMs }
         }.getOrDefault(emptyList())
 
     /// Haupt-App und Diktat-Overlay schreiben aus verschiedenen Coroutinen.
+    /// Mit abgeschaltetem Verlauf (Einstellungen) wird nichts gespeichert.
     @Synchronized
     fun add(context: Context, entry: HistoryEntry) {
+        if (!Settings.historyEnabled(context)) return
         save(context, (listOf(entry) + load(context)).take(MAX_ENTRIES))
     }
 
@@ -75,6 +92,7 @@ object HistoryStore {
                     put("m", e.model)
                     put("l", e.language)
                     put("s", e.audioSeconds.toDouble())
+                    put("src", e.source)
                 })
             }
         }.let { file(context).writeText(it.toString()) }

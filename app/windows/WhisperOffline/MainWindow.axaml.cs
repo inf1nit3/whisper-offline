@@ -56,6 +56,9 @@ public partial class MainWindow : Window
 
         AutostartBox.IsChecked = settings.Autostart;
         StartMinimizedBox.IsChecked = settings.StartMinimized;
+        TranslateBox.IsChecked = settings.Translate;
+        HistoryStore.Enabled = settings.HistoryEnabled;
+        recorder.Settings = settings;
         UpdateHotkeyLabel();
         suppressSettingsEvents = false;
 
@@ -90,8 +93,9 @@ public partial class MainWindow : Window
             if (!allowClose) { e.Cancel = true; Hide(); }
         };
         SetupTray();
-        HotkeyHook.Start(() => Dispatcher.UIThread.Post(ToggleDictation),
-                         settings.HotkeyModifiers, settings.HotkeyVk);
+        ApplyHotkeys();
+        HotkeyHook.Start((action, edge) => Dispatcher.UIThread.Post(() => OnHotkey(action, edge)));
+        Opened += (_, _) => OfferMeetingRecovery();
 
         // Modell einmal in die Engine laden, damit der erste Hotkey-Druck nicht
         // auf 180+ MB von der Platte wartet. Läuft im Hintergrund weiter.
@@ -137,20 +141,9 @@ public partial class MainWindow : Window
 
     /// Transkribiert Mikrofon-Samples. Bevorzugt die geladene Engine; nur wenn
     /// die DLL fehlt oder scheitert, wird whisper-cli als Unterprozess benutzt.
-    private string TranscribeSamples(float[] samples)
-    {
-        var lang = string.IsNullOrEmpty(Lang) ? "auto" : Lang;
-        if (WhisperNative.EnsureLoaded(WhisperCli.SelectedModel))
-        {
-            var native = WhisperNative.Transcribe(samples, lang, settings.ShortCtx);
-            if (native != null) return native.Trim();
-            // Abgebrochen heißt abgebrochen — nicht über whisper-cli neu anfangen.
-            if (WhisperNative.WasCancelled) return "";
-        }
-        var wav = Path.Combine(Path.GetTempPath(), "whisper_offline_rec.wav");
-        WavWriter.Write16kMono(wav, samples);
-        return WhisperCli.Transcribe(wav, Lang, out _).Trim();
-    }
+    /// Eigene Wörter (Prompt + Korrektur) und Ersetzungen wirken auf beiden Wegen.
+    private string TranscribeSamples(float[] samples) =>
+        Transcriber.Transcribe(samples, settings, Lang, settings.Translate);
 
     private static bool IsParakeetModel =>
         Path.GetFileName(WhisperCli.SelectedModel).Contains("parakeet", StringComparison.OrdinalIgnoreCase);
@@ -158,7 +151,7 @@ public partial class MainWindow : Window
     /// Transkribiert und zeigt dabei Fortschritt und Abbrechen-Knopf. Der
     /// Balken kombiniert die Engine-Meldung mit einer Zeitschätzung, die pro
     /// Modell auf diesem Rechner gelernt wird.
-    private async Task<string> TranscribeWithProgress(float[] samples)
+    private async Task<string> TranscribeWithProgress(float[] samples, LiveTranscriber? live = null)
     {
         var seconds = samples.Length / 16000.0;
         var model = Path.GetFileName(WhisperCli.SelectedModel);
@@ -182,8 +175,10 @@ public partial class MainWindow : Window
         timer.Start();
         try
         {
-            var text = await Task.Run(() => TranscribeSamples(samples));
-            if (text.Length > 0 && !WhisperNative.WasCancelled)
+            var text = live != null
+                ? await live.FinishAsync(samples)
+                : await Task.Run(() => TranscribeSamples(samples));
+            if (live == null && text.Length > 0 && !WhisperNative.WasCancelled)
                 TranscriptionEstimate.Record(settings, model, seconds, parakeet, clock.ElapsedMilliseconds);
             return text;
         }
@@ -209,6 +204,7 @@ public partial class MainWindow : Window
     private void OnWorkCancel(object? sender, RoutedEventArgs e)
     {
         WhisperNative.Cancel();
+        enhanceCts?.Cancel();
         WorkCancelButton.IsEnabled = false;
         WorkDetail.Text = "Wird abgebrochen…";
     }
@@ -223,20 +219,39 @@ public partial class MainWindow : Window
 
     private void UpdateHotkeyLabel()
     {
-        HotkeyButton.Content = capturingHotkey
+        HotkeyButton.Content = capturingHotkey && capturingTarget == HotkeyAction.Dictate
             ? "Kombination drücken…"
             : HotkeySpec.Describe(settings.HotkeyModifiers, settings.HotkeyVk);
         HotkeyHint.Text = HotkeyHook.LastBindOk
-            ? ""
+            ? (settings.PushToTalk ? "gedrückt halten zum Sprechen" : "")
             : "Kombination ist belegt — bitte eine andere wählen";
+        var more = new List<string>();
+        if (settings.SingleKeyVk != 0) more.Add(HotkeySpec.DescribeSingle(settings.SingleKeyVk) + " allein: Diktat");
+        if (settings.EnhanceHotkeyVk != 0)
+            more.Add(HotkeySpec.Describe(settings.EnhanceHotkeyModifiers, settings.EnhanceHotkeyVk) + ": Diktat + Enhance" +
+                     (HotkeyHook.BindOk(HotkeyAction.DictateEnhance) ? "" : " (belegt!)"));
+        if (settings.TransformHotkeyVk != 0)
+            more.Add(HotkeySpec.Describe(settings.TransformHotkeyModifiers, settings.TransformHotkeyVk) + ": Auswahl bearbeiten" +
+                     (HotkeyHook.BindOk(HotkeyAction.Transform) ? "" : " (belegt!)"));
+        HotkeyMoreLabel.Text = string.Join("   ·   ", more);
+        HotkeyMoreLabel.IsVisible = more.Count > 0;
         if (tray != null)
             tray.ToolTipText = "Scheisssewasser's Whisper — " +
                 HotkeySpec.Describe(settings.HotkeyModifiers, settings.HotkeyVk) + ": Diktat";
+        settingsHotkeyRefresh?.Invoke();
     }
 
-    private void OnHotkeyCapture(object? sender, RoutedEventArgs e)
+    /// Wird von den Einstellungen gesetzt, damit deren Hotkey-Knöpfe mitziehen.
+    private Action? settingsHotkeyRefresh;
+
+    private HotkeyAction capturingTarget = HotkeyAction.Dictate;
+
+    private void OnHotkeyCapture(object? sender, RoutedEventArgs e) => BeginHotkeyCapture(HotkeyAction.Dictate);
+
+    private void BeginHotkeyCapture(HotkeyAction target)
     {
         capturingHotkey = true;
+        capturingTarget = target;
         UpdateHotkeyLabel();
         Focus();
     }
@@ -256,6 +271,16 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Entf/Rücktaste: Zusatz-Hotkey abschalten
+        if (capturingTarget != HotkeyAction.Dictate && e.Key is Key.Delete or Key.Back && e.KeyModifiers == KeyModifiers.None)
+        {
+            SetHotkey(capturingTarget, 0, 0);
+            capturingHotkey = false;
+            UpdateHotkeyLabel();
+            e.Handled = true;
+            return;
+        }
+
         var vk = HotkeySpec.ToVk(e.Key);
         var mods = HotkeySpec.ToModifiers(e.KeyModifiers);
         if (vk == 0 || mods == 0)
@@ -266,11 +291,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        settings.HotkeyModifiers = mods;
-        settings.HotkeyVk = vk;
-        settings.Save();
         capturingHotkey = false;
-        HotkeyHook.Rebind(mods, vk);
+        SetHotkey(capturingTarget, mods, vk);
         // RegisterHotKey läuft asynchron auf dem Hotkey-Thread; kurz warten,
         // damit LastBindOk den neuen Stand zeigt.
         Dispatcher.UIThread.Post(async () =>
@@ -333,55 +355,6 @@ public partial class MainWindow : Window
         };
         tray.Clicked += (_, _) => { Show(); Activate(); };
         TrayIcon.SetIcons(Application.Current, new TrayIcons { tray });
-    }
-
-    /// Strg+Alt+Leertaste: Aufnahme starten/beenden; danach wird der Text
-    /// automatisch per Strg+V ins zuvor fokussierte Fenster (z. B. Chat) eingefügt.
-    private async void ToggleDictation()
-    {
-        if (busy || pickerOpen || downloading != null || dictating && !recorder.IsRecording) return;
-        // Läuft gerade eine Aufnahme im Hauptfenster, gehört das Mikrofon ihr.
-        if (!dictating && recorder.IsRecording) return;
-        if (!File.Exists(WhisperCli.SelectedModel)) return;
-
-        if (!dictating)
-        {
-            dictationTarget = PasteHelper.ForegroundWindow();
-            if (dictationTarget == IntPtr.Zero) return;
-            if (!recorder.Start()) return;
-            dictating = true;
-            StatusLabel.Text = "🎙 Diktat läuft — " +
-                HotkeySpec.Describe(settings.HotkeyModifiers, settings.HotkeyVk) +
-                " beendet & fügt ein";
-            return;
-        }
-
-        var samples = recorder.Stop();
-        dictating = false;
-        if (samples.Length < 1600) // < 0,1 s
-        {
-            StatusLabel.Text = "Diktat zu kurz";
-            return;
-        }
-
-        busy = true;
-        StatusLabel.Text = "Transkribiere Diktat…";
-        var text = (await TranscribeWithProgress(samples)).Trim();
-        if (text.Length == 0)
-        {
-            StatusLabel.Text = WhisperNative.WasCancelled ? "Diktat abgebrochen" : "Kein Text erkannt";
-            busy = false;
-            return;
-        }
-
-        AppendTranscript(text, samples.Length / 16000f);
-        if (Clipboard != null) await Clipboard.SetTextAsync(text);
-        await Task.Delay(250);              // Zwischenablage settling
-        PasteHelper.FocusWindow(dictationTarget);
-        await Task.Delay(150);              // Fokuswechsel settling
-        PasteHelper.CtrlV();                // fügt in den Chat ein
-        StatusLabel.Text = "Diktat eingefügt ✓";
-        busy = false;
     }
 
     private void UpdateModelLabel() =>
@@ -810,30 +783,65 @@ public partial class MainWindow : Window
 
     // ---------- Transkription ----------
 
+    private LiveTranscriber? windowLive;
+    private string transcriptBeforeLive = "";
+
     private async void OnRecordClick(object? sender, RoutedEventArgs e)
     {
-        if (busy || !File.Exists(WhisperCli.SelectedModel)) return;
+        if (busy || dictating || !File.Exists(WhisperCli.SelectedModel)) return;
         if (!recorder.IsRecording)
         {
             if (!recorder.Start())
             {
+                if (settings.AudioFeedback) Cues.Error();
                 StatusLabel.Text = "Mikrofon konnte nicht geöffnet werden.";
                 return;
             }
             RecordButton.Content = "⏹  Aufnahme beenden";
             StatusLabel.Text = "Aufnahme läuft…";
+            if (settings.LiveTranscription && WhisperNative.Available)
+            {
+                transcriptBeforeLive = TranscriptBox.Text ?? "";
+                windowLive = new LiveTranscriber(recorder, settings, Lang, settings.Translate, t =>
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (recorder.IsRecording)
+                            TranscriptBox.Text = (transcriptBeforeLive.Length > 0 ? transcriptBeforeLive + "\n\n" : "") + "🔴 " + t;
+                    }));
+                windowLive.Start();
+            }
             return;
         }
 
         busy = true;
         var samples = recorder.Stop();
+        var live = windowLive;
+        windowLive = null;
+        if (live != null) TranscriptBox.Text = transcriptBeforeLive;
         RecordButton.Content = "🎙  Aufnahme starten";
         StatusLabel.Text = $"Transkribiere {samples.Length / 16000f:F1} s Audio…";
-        var result = await TranscribeWithProgress(samples);
-        AppendTranscript(result, samples.Length / 16000f);
-        StatusLabel.Text = ResultStatus(result, samples.Length / 16000.0);
+        var result = await TranscribeWithProgress(samples, live);
+        string? note = null;
+        if (result.Length > 0)
+        {
+            // Eigene Aufnahme = Diktat: Snippets, Sprachbefehle, ggf. Enhance
+            bool enhance = settings.EnhanceAuto && Enhancer.IsConfigured(settings);
+            if (enhance) StatusLabel.Text = "Verbessere Text…";
+            ShowWork(cancellable: enhance);
+            enhanceCts = new CancellationTokenSource();
+            var r = await TextPipeline.FinishDictationAsync(settings, result, Transcriber.DictationLanguage(settings),
+                FormatMode.Standard, enhance, enhanceCts.Token);
+            HideWork();
+            result = r.Text;
+            note = r.Note;
+        }
+        AppendTranscript(result, samples.Length / 16000f, "app");
+        StatusLabel.Text = ResultStatus(result, samples.Length / 16000.0) + (note != null ? " " + note : "");
         busy = false;
     }
+
+    /// Abbruch für Enhance-Läufe aus dem Hauptfenster.
+    private CancellationTokenSource? enhanceCts;
 
     private async void OnFileClick(object? sender, RoutedEventArgs e)
     {
@@ -890,7 +898,7 @@ public partial class MainWindow : Window
                 var seconds = samples.Length / 16000.0;
                 StatusLabel.Text = $"Transkribiere „{name}“ ({seconds:F1} s Audio)…";
                 var text = await TranscribeWithProgress(samples);
-                AppendTranscript(text, (float)seconds);
+                AppendTranscript(text, (float)seconds, "file");
                 StatusLabel.Text = ResultStatus(text, seconds);
             }
             else if (samples != null)
@@ -907,9 +915,10 @@ public partial class MainWindow : Window
                 ShowWork(cancellable: false);
                 var lang = Lang;
                 string err = "";
-                var text = await Task.Run(() => WhisperCli.Transcribe(path!, lang, out err));
+                var text = await Task.Run(() => Transcriber.Post(WhisperCli.Transcribe(path!, lang, out err,
+                    TextMatching.Prompt(settings.Vocabulary), settings.Translate), settings));
                 HideWork();
-                AppendTranscript(text, 0);
+                AppendTranscript(text, 0, "file");
                 StatusLabel.Text = err.Length > 0 ? err : text.Trim().Length == 0 ? "Keine Sprache erkannt." : "Fertig.";
             }
         }
@@ -921,97 +930,26 @@ public partial class MainWindow : Window
         busy = false;
     }
 
-    private void AppendTranscript(string text, float audioSeconds)
+    private void AppendTranscript(string text, float audioSeconds, string source)
     {
         var t = text.Trim();
         if (t.Length == 0) return;
         TranscriptBox.Text = TranscriptBox.Text?.Length > 0
             ? TranscriptBox.Text + "\n\n" + t
             : t;
+        AddHistory(t, audioSeconds, source);
+    }
+
+    private void AddHistory(string text, float audioSeconds, string source) =>
         HistoryStore.Add(new HistoryEntry(
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            t,
+            text,
             Path.GetFileName(WhisperCli.SelectedModel),
-            language,
-            audioSeconds));
-    }
+            WhisperNative.IsParakeet ? "" : Transcriber.DictationLanguage(settings),
+            audioSeconds,
+            source));
 
-    // ---------- Verlauf ----------
-
-    private void OnOpenHistory(object? sender, RoutedEventArgs e)
-    {
-        BuildHistoryList();
-        HistoryPanel.IsVisible = true;
-        MainPanel.IsVisible = false;
-        PickerPanel.IsVisible = false;
-    }
-
-    private void OnHistoryClose(object? sender, RoutedEventArgs e)
-    {
-        HistoryPanel.IsVisible = false;
-        MainPanel.IsVisible = true;
-    }
-
-    private void OnHistoryClear(object? sender, RoutedEventArgs e)
-    {
-        HistoryStore.Clear();
-        BuildHistoryList();
-    }
-
-    private void BuildHistoryList()
-    {
-        HistoryList.Children.Clear();
-        var entries = HistoryStore.Load();
-        HistoryTitle.Text = $"Verlauf ({entries.Count})";
-        if (entries.Count == 0)
-        {
-            HistoryList.Children.Add(new TextBlock { Text = "Noch keine Einträge.", Foreground = Brushes.Gray });
-            return;
-        }
-        foreach (var e in entries)
-        {
-            var border = new Border
-            {
-                BorderBrush = Brushes.LightGray,
-                BorderThickness = new Avalonia.Thickness(1),
-                CornerRadius = new Avalonia.CornerRadius(6),
-                Padding = new Avalonia.Thickness(12),
-                Child = BuildHistoryCard(e),
-            };
-            HistoryList.Children.Add(border);
-        }
-    }
-
-    private StackPanel BuildHistoryCard(HistoryEntry e)
-    {
-        var card = new StackPanel { Spacing = 4 };
-        var head = new StackPanel { Orientation = Orientation.Horizontal };
-        head.Children.Add(new TextBlock
-        {
-            Text = e.DateText, FontWeight = FontWeight.Bold,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-        head.Children.Add(new TextBlock
-        {
-            Text = $"  {e.Model} · {e.Language}" + (e.AudioSeconds > 0 ? $" · {e.AudioSeconds:F1} s Audio" : ""),
-            FontSize = 12, Foreground = Brushes.Gray,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-        var spacer = new Control();
-        head.Children.Add(spacer);
-        var copy = new Button { Content = "Kopieren", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right };
-        copy.Click += async (_, _) =>
-        {
-            if (Clipboard != null) await Clipboard.SetTextAsync(e.Text);
-        };
-        head.Children.Add(copy);
-        var del = new Button { Content = "Löschen", FontSize = 12, Margin = new Avalonia.Thickness(6, 0, 0, 0) };
-        del.Click += (_, _) => { HistoryStore.Delete(e); BuildHistoryList(); };
-        head.Children.Add(del);
-        card.Children.Add(head);
-        card.Children.Add(new TextBlock { Text = e.Text, TextWrapping = TextWrapping.Wrap, MaxHeight = 120 });
-        return card;
-    }
+    // ---------- Verlauf: siehe MainWindow.Panels.cs ----------
 
     private async void OnCopyClick(object? sender, RoutedEventArgs e)
     {

@@ -29,7 +29,8 @@ public static class WhisperCli
 
     public static bool EnginePathExists => File.Exists(EnginePath);
 
-    public static string Transcribe(string audioPath, string language, out string error)
+    public static string Transcribe(string audioPath, string language, out string error,
+        string prompt = "", bool translate = false)
     {
         error = "";
         if (!EnginePathExists) { error = "whisper-cli.exe nicht gefunden (engine/)"; return ""; }
@@ -38,6 +39,8 @@ public static class WhisperCli
 
         var args = $"-m \"{SelectedModel}\" -f \"{audioPath}\" -nt -np -bs 1 -fa";
         if (language.Length > 0) args += $" -l {language}";
+        if (translate) args += " -tr";
+        if (prompt.Length > 0) args += " --prompt \"" + prompt.Replace("\"", "'") + "\"";
 
         var psi = new ProcessStartInfo
         {

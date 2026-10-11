@@ -17,8 +17,8 @@ android {
         // Nur mit -DGGML_VULKAN=ON muss hier 28 stehen (vkGetPhysicalDeviceFeatures2).
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "2.5"
+        versionCode = 17
+        versionName = "3.0"
         ndk {
             // Standard: nur Geräte-ABI (schlanke APK). Für Emulator/Universal:
             // ./gradlew assembleDebug -Pabis=arm64-v8a,x86_64
@@ -54,12 +54,20 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
     implementation("androidx.core:core-ktx:1.17.0")
+    // Sprechertrennung im Meeting-Modus (k2-fsa/sherpa-onnx, Apache-2.0).
+    // Liegt nicht im Repo: tools/fetch-android-deps.sh lädt sie.
+    implementation(files("libs/sherpa-onnx-static-link-onnxruntime-1.13.8.aar"))
+
+    // Reine Logik (Wortabgleich, Snippets, Modi) ohne Gerät testen: ./gradlew test
+    testImplementation("junit:junit:4.13.2")
 }
 
 /// CHANGELOG.md aus dem Repo-Root bei jedem Build ins Asset-Verzeichnis
 /// synchronisieren — der In-App-Changelog kann so nie einen Stand verpassen.
 tasks.register<Copy>("syncChangelog") {
     from(rootProject.file("../../CHANGELOG.md"))
+    // Anweisungen für das lokale Sprachmodell — gemeinsam mit der Windows-App
+    from(rootProject.file("../shared/prompts.json"))
     into("src/main/assets")
 }
 tasks.named("preBuild") { dependsOn("syncChangelog") }

@@ -44,6 +44,20 @@ void we_set_backend_dir(const char *dir);
 /// Parakeet braucht das nicht und ignoriert es.
 void we_set_vad_model(const char *path);
 
+/// Starthilfe für den Whisper-Decoder: eigene Wörter, Namen, Fachbegriffe
+/// („Scheisssewasser, Umsatzsteuervoranmeldung“). Whisper übernimmt dann eher
+/// diese Schreibweise. Wirkt ab dem nächsten we_transcribe; NULL oder "" schaltet
+/// ab. Parakeet hat keinen Prompt und ignoriert das.
+void we_set_prompt(const char *prompt);
+
+/// Ins Englische übersetzen statt in der gesprochenen Sprache zu transkribieren.
+/// Nur Whisper; Parakeet ignoriert das.
+void we_set_translate(bool translate);
+
+/// Sprache des letzten Laufs als Code ("de", "en" …) — bei „auto“ die erkannte.
+/// Leer bei Parakeet oder vor dem ersten Lauf.
+const char *we_last_language(void);
+
 /// Lädt das Modell. Ist dasselbe Modell mit derselben GPU-Einstellung bereits
 /// geladen, passiert nichts (kein erneutes Lesen von 180+ MB).
 /// Gibt false zurück, wenn die CPU die nötigen Erweiterungen nicht hat oder

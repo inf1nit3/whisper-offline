@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>WhisperOffline</RootNamespace>
     <AssemblyName>WhisperOffline</AssemblyName>
-    <Version>2.5.0</Version>
+    <Version>3.0.0</Version>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
@@ -19,11 +19,14 @@
     <!-- Autostart über den Run-Schlüssel des Benutzers. Als Paket statt über ein
          -windows-Zielframework, damit der Cross-Build von macOS aus weiter geht. -->
     <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx" Version="1.13.8" />
   </ItemGroup>
 
   <!-- CHANGELOG.md aus dem Repo-Root einbetten (In-App-Changelog, offline) -->
   <ItemGroup>
     <EmbeddedResource Include="..\..\..\CHANGELOG.md" Link="CHANGELOG.md" />
+    <!-- Anweisungen für das Sprachmodell, gemeinsam mit der Android-App -->
+    <EmbeddedResource Include="..\..\shared\prompts.json" Link="prompts.json" />
   </ItemGroup>
 
 </Project>

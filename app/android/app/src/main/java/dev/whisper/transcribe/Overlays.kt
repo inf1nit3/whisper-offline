@@ -33,9 +33,14 @@ fun HistoryOverlay(
 ) {
     var confirmClear by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    val shown = remember(entries, query) {
-        if (query.isBlank()) entries
-        else entries.filter { it.text.contains(query.trim(), ignoreCase = true) }
+    var days by remember { mutableIntStateOf(0) } // 0 = alle
+    var oldestFirst by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val enabled = remember { Settings.historyEnabled(context) }
+    val shown = remember(entries, query, days, oldestFirst) {
+        val since = if (days > 0) System.currentTimeMillis() - days * 86_400_000L else 0L
+        entries.filter { it.timeMs >= since && (query.isBlank() || it.text.contains(query.trim(), ignoreCase = true)) }
+            .let { if (oldestFirst) it.reversed() else it }
     }
     if (confirmClear) {
         AlertDialog(
@@ -66,12 +71,15 @@ fun HistoryOverlay(
                 title = "Verlauf",
                 subtitle = when {
                     entries.isEmpty() -> null
-                    query.isBlank() -> "${entries.size} Einträge"
+                    query.isBlank() && days == 0 -> "${entries.size} Einträge"
                     else -> "${shown.size} von ${entries.size} Einträgen"
                 },
                 onClose = onClose,
             ) {
                 if (entries.isNotEmpty()) {
+                    IconButton(onClick = { oldestFirst = !oldestFirst }) {
+                        Icon(Icons.Filled.SwapVert, contentDescription = if (oldestFirst) "Neueste zuerst" else "Älteste zuerst")
+                    }
                     // Exportiert, was gerade sichtbar ist — mit Suche also nur die Treffer
                     IconButton(onClick = { onExport(shown) }, enabled = shown.isNotEmpty()) {
                         Icon(Icons.Filled.IosShare, contentDescription = "Als Textdatei teilen")
@@ -96,14 +104,23 @@ fun HistoryOverlay(
                     shape = MaterialTheme.shapes.extraLarge,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                        .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
                 )
+                Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0 to "Alle", 7 to "7 Tage", 30 to "30 Tage").forEach { (d, label) ->
+                        FilterChip(selected = days == d, onClick = { days = d }, label = { Text(label) })
+                    }
+                }
+            }
+            if (!enabled) {
+                StatusCard("Der Verlauf ist abgeschaltet (Einstellungen) — neue Transkriptionen werden nicht gespeichert.",
+                    isError = false, onDismiss = {}, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             }
             if (entries.isNotEmpty() && shown.isEmpty()) {
                 EmptyState(
                     icon = Icons.Filled.SearchOff,
                     title = "Nichts gefunden",
-                    hint = "Kein Eintrag enthält „${query.trim()}“.",
+                    hint = if (query.isBlank()) "Keine Einträge in diesem Zeitraum." else "Kein Eintrag enthält „${query.trim()}“.",
                     modifier = Modifier.padding(top = 24.dp),
                 )
             } else if (entries.isEmpty()) {
@@ -493,11 +510,12 @@ fun OnboardingOverlay(onFinish: () -> Unit) {
 }
 
 /// Eigene Ersetzungsregeln verwalten (Erkennungsfehler dauerhaft korrigieren).
+/// Inhalt des Reiters „Ersetzungen“ im Wörterbuch.
 @Composable
-fun ReplacementsOverlay(
+fun ReplacementsContent(
     rules: List<Replacements.Rule>,
     onChange: (List<Replacements.Rule>) -> Unit,
-    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var from by remember { mutableStateOf("") }
     var to by remember { mutableStateOf("") }
@@ -509,76 +527,61 @@ fun ReplacementsOverlay(
         to = ""
     }
 
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .systemBarsPadding()
-                .imePadding()
-                .wrapContentWidth(Alignment.CenterHorizontally)
-                .widthIn(max = 720.dp)
-        ) {
-            OverlayHeader(
-                title = "Ersetzungen",
-                subtitle = "Wird ein Wort immer wieder falsch erkannt, hier einmal korrigieren",
-                onClose = onClose,
+    Column(
+        modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        OutlinedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = from, onValueChange = { from = it },
+                    label = { Text("Erkannt wird") },
+                    placeholder = { Text("z. B. Scheißewasser") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = to, onValueChange = { to = it },
+                    label = { Text("Ersetzen durch") },
+                    placeholder = { Text("z. B. Scheisssewasser") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                Button(onClick = { add() }, enabled = from.isNotBlank()) {
+                    Icon(Icons.Filled.Add, contentDescription = null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Regel hinzufügen")
+                }
+                Text(
+                    "Gilt für ganze Wörter, Groß-/Kleinschreibung egal — in der App, der Tastatur und im Diktat. " +
+                        "Für Namen und Fachbegriffe sind meist „Eigene Wörter“ bequemer: Die erkennen auch ähnlich Klingendes.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (rules.isEmpty()) {
+            EmptyState(
+                icon = Icons.Outlined.FindReplace,
+                title = "Noch keine Regeln",
+                hint = "Typische Kandidaten: Abkürzungen, feste Schreibweisen, wiederkehrende Fehler.",
             )
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                OutlinedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = from, onValueChange = { from = it },
-                            label = { Text("Erkannt wird") },
-                            placeholder = { Text("z. B. Scheißewasser") },
-                            singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        )
-                        OutlinedTextField(
-                            value = to, onValueChange = { to = it },
-                            label = { Text("Ersetzen durch") },
-                            placeholder = { Text("z. B. Scheisssewasser") },
-                            singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        )
-                        Button(onClick = { add() }, enabled = from.isNotBlank()) {
-                            Icon(Icons.Filled.Add, contentDescription = null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Regel hinzufügen")
-                        }
-                        Text(
-                            "Gilt für ganze Wörter, Groß-/Kleinschreibung egal — in der App, der Tastatur und im Diktat.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                if (rules.isEmpty()) {
-                    EmptyState(
-                        icon = Icons.Outlined.FindReplace,
-                        title = "Noch keine Regeln",
-                        hint = "Typische Kandidaten: Namen, Firmen, Fachbegriffe.",
-                    )
-                }
-                rules.forEach { r ->
-                    OutlinedCard(Modifier.fillMaxWidth()) {
-                        Row(
-                            Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(r.from, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "wird zu",
-                                tint = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(horizontal = 8.dp))
-                            Text(r.to.ifEmpty { "(entfernen)" }, style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-                            IconButton(onClick = { onChange(rules - r) }) {
-                                Icon(Icons.Outlined.Delete, contentDescription = "Regel löschen",
-                                    tint = MaterialTheme.colorScheme.error)
-                            }
-                        }
+        }
+        rules.forEach { r ->
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(r.from, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "wird zu",
+                        tint = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(horizontal = 8.dp))
+                    Text(r.to.ifEmpty { "(entfernen)" }, style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { onChange(rules - r) }) {
+                        Icon(Icons.Outlined.Delete, contentDescription = "Regel löschen",
+                            tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }

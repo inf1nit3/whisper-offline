@@ -35,7 +35,13 @@ object TranscriptionJobs {
     data class Outcome(val text: String?, val message: String?, val isError: Boolean)
 
     /// Was für die Zeitschätzung und den Verlauf gebraucht wird.
-    data class Setup(val model: String, val gpu: Boolean, val parakeet: Boolean, val language: String)
+    data class Setup(
+        val model: String,
+        val gpu: Boolean,
+        val parakeet: Boolean,
+        val language: String,
+        val translate: Boolean = false,
+    )
 
     private val _running = MutableStateFlow<Running?>(null)
     val running: StateFlow<Running?> = _running
@@ -98,7 +104,8 @@ object TranscriptionJobs {
                 }
             }
             if (samples.isEmpty()) Outcome(null, "Die Datei enthält keine Audiodaten", isError = true)
-            else transcribe(app, samples, setup, if (count > 1) "Datei ${index + 1} von $count · " else "")
+            else transcribe(app, samples, setup, if (count > 1) "Datei ${index + 1} von $count · " else "",
+                source = HistoryEntry.SOURCE_FILE)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -112,10 +119,26 @@ object TranscriptionJobs {
         }
     }
 
-    /// Mikrofonaufnahme transkribieren.
-    fun startSamples(context: Context, samples: FloatArray, setup: Setup) {
+    /// Mikrofonaufnahme transkribieren. Lief eine [live]-Transkription mit,
+    /// fehlt nur noch der Rest — dann geht es fast ohne Wartezeit.
+    fun startSamples(context: Context, samples: FloatArray, setup: Setup, live: LiveTranscriber? = null) {
         val app = context.applicationContext
-        begin(app, Running(titleFor(samples), null, null)) { transcribe(app, samples, setup, "") }
+        begin(app, Running(titleFor(samples), null, null)) {
+            transcribe(app, samples, setup, "", source = HistoryEntry.SOURCE_APP, live = live)
+        }
+    }
+
+    /// Fertiges Transkript nachträglich verbessern bzw. umformen (✨ am Transkript).
+    fun startTransform(context: Context, text: String, title: String, work: suspend (Context) -> Enhancer.Outcome) {
+        val app = context.applicationContext
+        begin(app, Running(title, null, "Sprachmodell arbeitet …")) {
+            val o = work(app)
+            when {
+                o.cancelled -> Outcome(null, "Abgebrochen", isError = false)
+                o.text != null -> Outcome(o.text, null, isError = false)
+                else -> Outcome(null, o.error ?: "Sprachmodell fehlgeschlagen", isError = true)
+            }
+        }
     }
 
     fun cancel() {
@@ -124,6 +147,7 @@ object TranscriptionJobs {
         // Während des Dekodierens greift die Coroutine-Abbruchprüfung, während
         // der Transkription die der Engine.
         WhisperBridge.cancel()
+        Enhancer.cancel()
         job?.cancel()
     }
 
@@ -149,7 +173,8 @@ object TranscriptionJobs {
 
     /// Der Balken kombiniert die Engine-Meldung (Whisper je 30-s-Fenster) mit
     /// einer Zeitschätzung, die pro Modell auf diesem Gerät gelernt wird.
-    private suspend fun transcribe(app: Context, samples: FloatArray, setup: Setup, prefix: String): Outcome {
+    private suspend fun transcribe(app: Context, samples: FloatArray, setup: Setup, prefix: String,
+                                   source: String, live: LiveTranscriber? = null): Outcome {
         val seconds = samples.size / AudioRecorder.SAMPLE_RATE.toFloat()
         val expected = TranscriptionProgress.expectedMs(app, setup.model, setup.gpu, seconds, setup.parakeet)
         _running.value = Running(prefix + titleFor(samples), null, null)
@@ -178,7 +203,8 @@ object TranscriptionJobs {
                 // nur über WhisperBridge.cancel() — deshalb hier nicht abbrechbar
                 // warten und das Ergebnis danach auswerten.
                 withContext(Dispatchers.Default + kotlinx.coroutines.NonCancellable) {
-                    WhisperBridge.transcribe(samples, setup.language)
+                    if (live != null) live.finish(samples)
+                    else WhisperBridge.transcribe(samples, setup.language, setup.translate)
                 }
             } finally {
                 ticker.cancel()
@@ -190,16 +216,30 @@ object TranscriptionJobs {
             return if (WhisperBridge.wasCancelled()) Outcome(null, "Transkription abgebrochen", isError = false)
             else Outcome(null, "Transkription fehlgeschlagen — anderes Modell versuchen?", isError = true)
         }
-        TranscriptionProgress.record(app, setup.model, setup.gpu, seconds, setup.parakeet, elapsed)
-        val trimmed = text.trim()
+        // Mit Live-Vorschau ist die gemessene Zeit nur der Rest — taugt nicht zum Lernen
+        if (live == null) TranscriptionProgress.record(app, setup.model, setup.gpu, seconds, setup.parakeet, elapsed)
+        var trimmed = text.trim()
         if (trimmed.isEmpty()) return Outcome("", "Keine Sprache erkannt", isError = false)
+        val language = if (setup.parakeet) "" else TextPipeline.dictationLanguage(app)
+
+        // Eigene Aufnahme = Diktat: Snippets, Sprachbefehle, ggf. Enhance.
+        // Dateien sind fremde Aufnahmen — dort bleibt der Text wörtlich.
+        var note: String? = null
+        if (source == HistoryEntry.SOURCE_APP) {
+            val enhance = Settings.enhanceAuto(app) && LlmManager.isConfigured(app)
+            if (enhance) _running.value = Running(prefix + "Verbessere Text", null, "Sprachmodell arbeitet …")
+            val r = TextPipeline.finishDictation(app, trimmed, language, FormatMode.STANDARD, enhance)
+            trimmed = r.text
+            note = r.note
+        }
         HistoryStore.add(app, HistoryEntry(
             timeMs = System.currentTimeMillis(),
             text = trimmed,
             model = setup.model,
-            language = if (setup.parakeet) "" else setup.language,
+            language = language,
             audioSeconds = seconds,
+            source = source,
         ))
-        return Outcome(trimmed, null, isError = false)
+        return Outcome(trimmed, note, isError = false)
     }
 }

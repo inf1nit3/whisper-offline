@@ -69,12 +69,12 @@ fun DictationUi(modelPath: String) {
     var message by remember { mutableStateOf("Lade Modell…") }
     var resultText by remember { mutableStateOf("") }
     var progress by remember { mutableStateOf<Float?>(null) }
-    val recorder = remember { AudioRecorder() }
+    val recorder = remember { AudioRecorder(context.applicationContext) }
     fun close() = (context as? ComponentActivity)?.finish()
 
     // Verlässt der Nutzer den Dialog (Home-Taste, anderer Aufruf), bleibt das
     // Mikrofon sonst im Hintergrund offen.
-    DisposableEffect(recorder) { onDispose { if (recorder.isRecording) recorder.stop() } }
+    DisposableEffect(recorder) { onDispose { if (recorder.isRecording) recorder.stop(cue = false) } }
 
     var hasPermission by remember {
         mutableStateOf(
@@ -113,6 +113,7 @@ fun DictationUi(modelPath: String) {
         } else {
             state = DictationState.ERROR
             message = "Mikrofon belegt?"
+            Cues.error(context)
             return
         }
         modelJob = scope.async(Dispatchers.IO) {
@@ -144,8 +145,9 @@ fun DictationUi(modelPath: String) {
                     delay(100)
                 }
             }
+            val translate = Settings.translate(context) && !parakeet
             val text = withContext(Dispatchers.Default) {
-                WhisperBridge.transcribe(samples, Settings.language(context))
+                WhisperBridge.transcribe(samples, Settings.language(context), translate)
             }
             ticker.cancel()
             val elapsedMs = SystemClock.elapsedRealtime() - t0
@@ -162,17 +164,25 @@ fun DictationUi(modelPath: String) {
                 state = DictationState.ERROR
                 message = "Nichts erkannt (${secs.toFixed1(1)} s)"
             } else {
+                // Snippets, Sprachbefehle und ggf. Enhance — wie in der Tastatur,
+                // nur ohne Ziel-App (der Text geht in die Zwischenablage)
+                val lang = if (parakeet) "" else TextPipeline.dictationLanguage(context)
+                val enhance = Settings.enhanceAuto(context) && LlmManager.isConfigured(context)
+                if (enhance) { message = "Verbessere Text …"; progress = null }
+                val result = TextPipeline.finishDictation(context, trimmed, lang, FormatMode.STANDARD, enhance)
                 val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                cm.setPrimaryClip(ClipData.newPlainText("Whisper", trimmed))
-                resultText = trimmed
+                cm.setPrimaryClip(ClipData.newPlainText("Whisper", result.text))
+                resultText = result.text
                 state = DictationState.DONE
-                message = "In Zwischenablage kopiert (${secs.toFixed1(1)} s) — im Chat einfügen"
+                message = "In Zwischenablage kopiert (${secs.toFixed1(1)} s) — im Chat einfügen" +
+                    (result.note?.let { "\n$it" } ?: "")
                 HistoryStore.add(context, HistoryEntry(
                     timeMs = System.currentTimeMillis(),
-                    text = trimmed,
+                    text = result.text,
                     model = modelPath.substringAfterLast('/'),
-                    language = Settings.language(context),
+                    language = lang,
                     audioSeconds = audioSeconds,
+                    source = HistoryEntry.SOURCE_DICTATION,
                 ))
                 Toast.makeText(context, "Text kopiert — jetzt im Chat einfügen", Toast.LENGTH_SHORT).show()
             }
@@ -278,6 +288,7 @@ fun DictationUi(modelPath: String) {
                     TextButton(onClick = { close() }) { Text("Schließen") }
                 DictationState.TRANSCRIBING -> TextButton(onClick = {
                     WhisperBridge.cancel()
+                    Enhancer.cancel()
                     message = "Wird abgebrochen…"
                 }) { Text("Abbrechen") }
                 else -> {}

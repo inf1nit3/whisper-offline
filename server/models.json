@@ -82,5 +82,81 @@
         "Braucht ~2 GB freien Speicher"
       ]
     }
+  ],
+  "llm": [
+    {
+      "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "label": "Qwen3 4B — Empfohlen",
+      "tagline": "Beste Ergebnisse für Enhance, Umformen und Meeting-Notizen",
+      "size": 2497281120,
+      "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+      "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "pros": [
+        "Setzt Selbstkorrekturen, Listen und Formatierung zuverlässig um",
+        "Bleibt in der Sprache des Diktats",
+        "Gut für Meeting-Notizen"
+      ],
+      "cons": [
+        "2,5 GB Download, ~3 GB Arbeitsspeicher",
+        "Auf dem Handy einige Sekunden pro Diktat"
+      ]
+    },
+    {
+      "file": "gemma-3-4b-it-Q4_K_M.gguf",
+      "label": "Gemma 3 4B — Alternative",
+      "tagline": "Googles offenes Modell gleicher Größe",
+      "size": 2489894016,
+      "sha256": "04a43a22e8d2003deda5acc262f68ec1005fa76c735a9962a8c77042a74a7d19",
+      "url": "https://huggingface.co/unsloth/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf",
+      "pros": [
+        "Natürlicher Stil, gut in Deutsch",
+        "Gleicher Speicherbedarf wie Qwen3 4B"
+      ],
+      "cons": [
+        "2,5 GB Download, ~3 GB Arbeitsspeicher"
+      ]
+    },
+    {
+      "file": "Qwen3-1.7B-Q4_K_M.gguf",
+      "label": "Qwen3 1.7B — Leicht",
+      "tagline": "Für Geräte mit wenig Arbeitsspeicher",
+      "size": 1107409472,
+      "sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
+      "url": "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
+      "pros": [
+        "Nur 1,1 GB, schnell auch auf älteren Handys",
+        "Zeichensetzung und Groß-/Kleinschreibung"
+      ],
+      "cons": [
+        "Selbstkorrekturen und Listen oft nicht umgesetzt",
+        "Für Umformen und Notizen nur eingeschränkt brauchbar"
+      ]
+    }
+  ],
+  "meeting": [
+    {
+      "file": "pyannote-segmentation-3.0.int8.onnx",
+      "label": "Sprecherwechsel (pyannote 3.0)",
+      "tagline": "Erkennt, wann jemand spricht und wann ein anderer übernimmt",
+      "size": 1540506,
+      "sha256": "d582f4b4c6b48205de7e0643c57df0df5615a3c176189be3fc461e9d18827b5d",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.int8.onnx",
+      "pros": [
+        "MIT-Lizenz, 1,5 MB"
+      ],
+      "cons": []
+    },
+    {
+      "file": "wespeaker_en_voxceleb_resnet34_LM.onnx",
+      "label": "Stimmerkennung (WeSpeaker ResNet34)",
+      "tagline": "Ordnet Abschnitte Sprechern zu und erkennt gespeicherte Stimmen wieder",
+      "size": 26530550,
+      "sha256": "e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx",
+      "pros": [
+        "Sprachunabhängig (VoxCeleb), 26 MB"
+      ],
+      "cons": []
+    }
   ]
 }

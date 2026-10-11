@@ -50,14 +50,29 @@ object WhisperBridge {
     /// Transkript der 16-kHz-Mono-Samples; null, wenn die Engine scheitert
     /// oder per [cancel] abgebrochen wurde ([wasCancelled] unterscheidet).
     /// Wartet, falls gerade ein Modell geladen wird.
-    fun transcribe(samples: FloatArray, language: String): String? =
+    ///
+    /// Die eigenen Wörter gehen vorab als Prompt an Whisper und korrigieren
+    /// danach, was trotzdem ähnlich klingend danebenliegt; die Ersetzungen
+    /// laufen zuerst, damit eine bewusste Regel nicht überschrieben wird.
+    @JvmName("transcribeText") // JVM-Name „transcribe“ gehört der nativen Funktion
+    fun transcribe(samples: FloatArray, language: String, translate: Boolean = false): String? =
         synchronized(lock) {
-            transcribe(samples, language, false)
+            setPrompt(Vocabulary.prompt())
+            setTranslate(translate)
+            nativeTranscribe(samples, language, false)
                 .takeUnless { it.startsWith(ERROR_PREFIX) }
                 // Whisper beginnt jedes Segment mit einem Leerzeichen — pro Zeile weg damit.
                 ?.lines()?.joinToString("\n") { it.trim() }
                 ?.let(Replacements::apply)
+                ?.let(Vocabulary::correct)
         }
+
+    /// Sprache des letzten Laufs ("de", "en" …), bei „Automatisch“ die
+    /// erkannte. Leer bei Parakeet.
+    external fun lastLanguage(): String
+
+    private external fun setPrompt(prompt: String?)
+    private external fun setTranslate(translate: Boolean)
 
     /// Prozent 0–100 der laufenden Transkription, außerhalb eines Laufs 0.
     /// Ohne Sperre — aus dem UI-Thread abfragbar, während [transcribe] rechnet.
@@ -102,5 +117,6 @@ object WhisperBridge {
     external fun lastError(): String
 
     /// [shortCtx] kürzt das 30-s-Encoder-Fenster auf die tatsächliche Audiolänge.
-    private external fun transcribe(samples: FloatArray, language: String, shortCtx: Boolean): String
+    @JvmName("transcribe")
+    private external fun nativeTranscribe(samples: FloatArray, language: String, shortCtx: Boolean): String
 }

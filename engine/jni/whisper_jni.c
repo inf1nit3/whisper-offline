@@ -10,8 +10,9 @@
 #define TAG "whisper-jni"
 
 static void android_log_sink(int level, const char *text) {
-    __android_log_print(level == 2 /* GGML_LOG_LEVEL_ERROR */ ? ANDROID_LOG_ERROR
-                                                              : ANDROID_LOG_INFO,
+    // ggml: 1 DEBUG, 2 INFO, 3 WARN, 4 ERROR, 5 CONT (Fortsetzung der Vorzeile)
+    if (level == 1 || level == 5) return;
+    __android_log_print(level == 4 ? ANDROID_LOG_ERROR : level == 3 ? ANDROID_LOG_WARN : ANDROID_LOG_INFO,
                         TAG, "%s", text);
 }
 
@@ -91,6 +92,27 @@ Java_dev_whisper_transcribe_WhisperBridge_setVadModel(JNIEnv *env, jobject thiz,
     const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
     we_set_vad_model(path);
     (*env)->ReleaseStringUTFChars(env, jpath, path);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_whisper_transcribe_WhisperBridge_setPrompt(JNIEnv *env, jobject thiz, jstring jprompt) {
+    (void) thiz;
+    if (jprompt == NULL) { we_set_prompt(NULL); return; }
+    const char *prompt = (*env)->GetStringUTFChars(env, jprompt, NULL);
+    we_set_prompt(prompt);
+    (*env)->ReleaseStringUTFChars(env, jprompt, prompt);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_whisper_transcribe_WhisperBridge_setTranslate(JNIEnv *env, jobject thiz, jboolean jtranslate) {
+    (void) env; (void) thiz;
+    we_set_translate(jtranslate == JNI_TRUE);
+}
+
+JNIEXPORT jstring JNICALL
+Java_dev_whisper_transcribe_WhisperBridge_lastLanguage(JNIEnv *env, jobject thiz) {
+    (void) thiz;
+    return (*env)->NewStringUTF(env, we_last_language());
 }
 
 /// Prozent 0–100 der laufenden Transkription; lock-frei aus dem UI-Thread abfragbar.

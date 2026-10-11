@@ -178,6 +178,10 @@ fun TranscriptCard(
     onShare: () -> Unit,
     onEdit: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /// Live-Vorschau während der Aufnahme: nur lesen, keine Aktionen.
+    live: Boolean = false,
+    /// ✨ Umformen per Sprachmodell; null = kein Modell eingerichtet.
+    onTransform: (() -> Unit)? = null,
 ) {
     var editing by rememberSaveable { mutableStateOf(false) }
     // Cursor ans Ende — man ergänzt meist etwas oder korrigiert den Schluss
@@ -187,8 +191,11 @@ fun TranscriptCard(
     ElevatedCard(modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Transkript", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(if (live) "Live" else "Transkript", style = MaterialTheme.typography.titleMedium,
+                    color = if (live) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f))
                 when {
+                    live -> Spacer(Modifier.height(48.dp))
                     editing -> {
                         TextButton(onClick = { editing = false }) { Text("Verwerfen") }
                         IconButton(onClick = { onEdit(draft.text.trim()); editing = false }) {
@@ -197,6 +204,9 @@ fun TranscriptCard(
                         }
                     }
                     text.isNotEmpty() -> {
+                        onTransform?.let { t ->
+                            IconButton(onClick = t) { Icon(Icons.Filled.AutoAwesome, contentDescription = "Umformen") }
+                        }
                         IconButton(onClick = { editing = true }) { Icon(Icons.Filled.Edit, contentDescription = "Bearbeiten") }
                         IconButton(onClick = onCopy) { Icon(Icons.Filled.ContentCopy, contentDescription = "Kopieren") }
                         IconButton(onClick = onShare) { Icon(Icons.Filled.Share, contentDescription = "Teilen") }

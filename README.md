@@ -1,9 +1,9 @@
 # Scheisssewasser's Whisper — Windows & Android
 
-![Version](https://img.shields.io/badge/version-1.0-blue)
-[![Release](https://img.shields.io/badge/release-v1.0-brightgreen)](https://github.com/inf1nit3/whisper-offline/releases/tag/v1.0)
+![Version](https://img.shields.io/badge/version-3.0-blue)
+[![Release](https://img.shields.io/badge/release-v3.0-brightgreen)](https://github.com/inf1nit3/whisper-offline/releases/tag/v3.0)
 
-**Aktuelle Version: 1.0** — [Release-Notes](https://github.com/inf1nit3/whisper-offline/releases/tag/v1.0)
+**Aktuelle Version: 3.0** — [Release-Notes](https://github.com/inf1nit3/whisper-offline/releases/tag/v3.0)
 
 Lokale, vollständig offline laufende Sprachtranskription mit OpenAI Whisper (whisper.cpp),
 nach dem Vorbild von Whisper Bar unter macOS. Keine Cloud, keine Netzwerknutzung — Modell und
@@ -20,11 +20,15 @@ Whisper/
 │   ├── core/                 # gemeinsamer Engine-Kern (Threads, Tuning, Timings)
 │   ├── jni/                  # JNI-Brücke (C) für Android + CMake-Setup
 │   ├── shim/                 # whisper_shim.dll: flache C-API für die Windows-App
+│   ├── llama.cpp/            # Upstream-Quellcode v0.6.0 (Git-Klon, nicht eingecheckt)
+│   ├── llm/                  # Sprachmodell-Kern: libllm_jni.so (Android), llm-runner.exe (Windows)
 │   ├── build-win64/          # Kreuzkompilierte Windows-Engine (MinGW)
 │   └── whisper-macos         # Whisper Bars Runner (macOS-Referenz)
 ├── app/
-│   ├── android/              # Kotlin/Compose-App (Gradle-Projekt)
-│   └ windows/WhisperOffline/ # Avalonia-App (.NET, cross-publishbar)
+│   ├── shared/prompts.json   # Anweisungen für das Sprachmodell (beide Apps)
+│   ├── android/              # Kotlin/Compose-App (Gradle-Projekt, Unit-Tests in src/test)
+│   ├ windows/WhisperOffline/ # Avalonia-App (.NET, cross-publishbar)
+│   └ windows/WhisperOffline.Tests/ # xUnit: Textlogik, Sprechertrennung, PDF, UI-Renderings
 ├── models/ggml-base.bin      # Whisper base (141 MB)
 ├── dist/                     # Fertige Pakete
 ├── tools/                    # Gradle, .NET SDK, Skripte
@@ -40,6 +44,14 @@ Beide Apps nutzen dieselbe Engine (whisper.cpp) und dasselbe Modell, aber getren
 | Android | Kotlin + Jetpack Compose | `libwhisper_jni.so` per JNI (arm64-v8a, x86_64) | Download vom VPS → filesDir |
 | Windows | Avalonia (.NET 10) | `whisper_shim.dll` per P/Invoke, Modell bleibt geladen; `whisper-cli.exe` als Rückfall und für Dateiformate | `models/` neben der EXE |
 
+Dazu seit v3.0:
+
+| Baustein | Android | Windows |
+|---|---|---|
+| Sprachmodell (Enhance, Umformen, Notizen) | `libllm_jni.so` (llama.cpp, eigene ggml-Kopie, nur JNI-Symbole sichtbar) | `engine/llm/llm-runner.exe` als eigener Prozess mit eigenen ggml-DLLs; alternativ ein eigener Befehl (Claude Code u. ä.) |
+| Sprechertrennung (Meeting) | sherpa-onnx 1.13.8 (AAR, statisch mit onnxruntime) | sherpa-onnx 1.13.8 (NuGet) |
+| Textlogik (eigene Wörter, Snippets, Sprachbefehle, Modi) | Kotlin, `TextRules.kt`/`Vocabulary.kt`/`FormatMode.kt` | C#, `TextLogic.cs` — gleiche Regeln, gleiche Testfälle |
+
 Die Tuning-Arbeit, die auf beiden Plattformen gleich ist — Threadzahl nach
 großen Kernen, greedy statt Beam Search, `single_segment` bei kurzem Audio,
 optionales Kürzen des Encoder-Fensters, Zeitmessung — steht einmal in
@@ -47,9 +59,10 @@ optionales Kürzen des Encoder-Fensters, Zeitmessung — steht einmal in
 
 Die Windows-Engine wählt beim Start automatisch die passende CPU-Variante
 (SSE4.2 bis AVX-512/AMX) und läuft daher auf jedem x64-Windows ab Windows 7.
-Die beiden MinGW-Runtime-DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`) werden
-mitgeliefert (GPL mit Runtime-Exception, Weitervertrieb erlaubt) — ohne sie
-startet die EXE auf Windows-Rechnern ohne MinGW nicht.
+Die drei MinGW-Runtime-DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`,
+`libwinpthread-1.dll`) werden mitgeliefert (GPL mit Runtime-Exception bzw. MIT,
+Weitervertrieb erlaubt) — ohne sie lädt die Engine auf Rechnern ohne MinGW nicht.
+`libwinpthread-1.dll` fehlte bis v2.5 im Paket.
 
 ## Fertige Pakete
 
@@ -65,8 +78,21 @@ startet die EXE auf Windows-Rechnern ohne MinGW nicht.
   und SHA256-Prüfung; später umschaltbar
 - Mikrofonaufnahme → Transkription (16 kHz Mono)
 - Datei-Transkription (Windows: wav/mp3/flac/ogg/m4a/mp4…, Android: alles von MediaCodec Dekodierbare)
-- Sprachauswahl: Automatisch / Deutsch / English
-- Kopieren des Transkripts
+- Sprachauswahl: Automatisch / Deutsch / English, optional ins Englische übersetzen
+- Kopieren, Teilen, Bearbeiten des Transkripts
+
+Seit v3.0 (beide Apps, Details im CHANGELOG):
+
+- **Wörterbuch:** eigene Wörter (Whisper-Prompt + unscharfe Korrektur per Kölner
+  Phonetik), Ersetzungen, Snippets per Sprachbefehl
+- **Sprachbefehle** („Komma“, „neuer Absatz“ …) und **Live-Transkription**
+- **Enhance** mit lokalem Sprachmodell: Bereinigen und Formatieren passend zur
+  Ziel-App, Umformen von Text (auch markierter Text in anderen Apps), eigener System-Prompt
+- **Meeting-Modus:** Sprechertrennung, Stimmen merken, Redezeit, Notizen, PDF-Export
+- **Statistik**, Verlauf-Filter, Töne, Ducking, Mikrofonwahl
+- Windows zusätzlich: Push-to-Talk, Einzeltaste, Hotkeys für „Diktat + Enhance“ und
+  „Auswahl bearbeiten“, Overlay, Zwischenablage bleibt erhalten, Enter je Programm,
+  Stapel-Transkription
 
 ## Alles von macOS aus neu bauen
 
@@ -111,7 +137,43 @@ echo "sdk.dir=$HOME/Library/Android/sdk" > local.properties
 ../../tools/package-windows.sh
 ```
 
+Seit v3.0 kommen llama.cpp (Enhance) und sherpa-onnx (Meeting) dazu:
+
+```bash
+git clone --depth 1 --branch v0.6.0 https://github.com/ggml-org/llama.cpp engine/llama.cpp
+tools/fetch-android-deps.sh        # sherpa-onnx-AAR nach app/android/app/libs (SHA-256 geprüft)
+tools/build-engine-android.sh      # libwhisper_jni.so + libllm_jni.so, gestrippt nach jniLibs/
+                                   # (mit Argument x86_64 zusätzlich für x86-Emulatoren)
+# Windows: llm-runner.exe + eigene ggml-DLLs (MinGW)
+cmake -S engine/llm -B engine/llm/build-win64 -G Ninja \
+  -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
+  -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+  -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres -DCMAKE_BUILD_TYPE=Release
+cmake --build engine/llm/build-win64 --target llm-runner -j8
+# macOS-Runner zum Testen der Prompts: cmake -S engine/llm -B engine/llm/build-macos …
+```
+
 ## Tests
+
+Ab v3.0 automatisiert:
+
+```bash
+cd app/android && ./gradlew testDebugUnitTest          # 23 Tests: Phonetik, Wortkorrektur,
+                                                        # Snippets, Sprachbefehle, Modi, Pausen, Statistik
+tools/dotnet/dotnet test app/windows/WhisperOffline.Tests # gleiche Fälle für Windows (C#)
+# Sprechertrennung + PDF mit echten Modellen, Fenster als PNG:
+WHISPER_TEST_MEETING=… WHISPER_TEST_MODELS=models/meeting WHISPER_UI_SHOTS=/tmp/ui \
+  tools/dotnet/dotnet test app/windows/WhisperOffline.Tests
+python3 tools/test-llm.py models/llm/<modell>.gguf prompts.json   # Enhance-Prompts am Mac
+```
+
+v3.0 im Emulator (AVD `Whisper_Test_API36`) geprüft: Wortkorrektur, Umformen mit
+Qwen3 1.7B, Textauswahl-Menü, Meeting-Auswertung mit zwei Stimmen (Trennung, Stimme
+wiedererkannt, Notizen). Nicht im Emulator prüfbar (kein Mikrofon): Aufnahme,
+Live-Transkription, Tastatur-Diktat. Windows: kompiliert, Logik/Sprechertrennung/PDF
+getestet, Oberflächen gerendert — ein Lauf auf einem echten Windows-Rechner steht aus.
+
+Frühere Stände:
 
 - macOS-Referenz: `engine/whisper-macos` transkribiert Testaudio korrekt (0,3 s, Metal).
 - Windows: Engine per MinGW kreuzkompiliert; Import-Tabelle geprüft — alle benötigten DLLs
@@ -378,6 +440,33 @@ geladen und dann aufgenommen, man sprach also bei kaltem Prozess ins Leere.
 öffnen — aufgenommen wird aber nur sichtbar im Vordergrund, und der Text landet
 erst in der Zwischenablage, wenn „Fertig" angetippt wird.
 
+## Enhance (lokales Sprachmodell)
+
+Die Anweisungen stehen in `app/shared/prompts.json` — englisch, weil kleine Modelle
+englische Anweisungen am zuverlässigsten befolgen; ein Sprachhinweis hält die Ausgabe in
+der Sprache des Diktats. Gemessen auf dem Mac (CPU, deutsche Testdiktate):
+
+| Modell | Größe | Ergebnis |
+|---|---|---|
+| Gemma 3 1B | 0,8 GB | übersetzt ungefragt ins Englische, erfindet Wörter — nicht im Katalog |
+| Qwen3 1.7B | 1,1 GB | Zeichensetzung ok, Selbstkorrekturen/Listen oft nicht — „leicht“ |
+| Qwen3 4B Instruct | 2,5 GB | setzt Korrekturen, Listen, E-Mail-Form um, 4–6 s je Diktat — **Empfehlung** |
+
+Was regelbasiert verlässlicher ist, läuft vor bzw. nach dem Modell: Sprachbefehle,
+Füllwörter, Satzanfänge, die eigene Wortliste. Die Modelle stehen im Manifest unter
+`llm` (siehe `server/README-server.md`).
+
+## Meeting-Modus
+
+Aufnahme direkt in WAV-Dateien (stundenlang ohne Speicherproblem), danach
+Sprechertrennung mit sherpa-onnx (pyannote-Segmentierung + WeSpeaker-Stimmabdruck) in
+10-Minuten-Fenstern; Sprecher werden über die Fenster hinweg per Stimmabdruck
+zugeordnet (gleiche Person ab Kosinus 0,62 — gemessen: verschiedene Personen ~0,5,
+dieselbe 0,7–0,97). Jeder Redebeitrag wird einzeln transkribiert. Windows nimmt
+Mikrofon und Systemaudio getrennt auf: das Mikrofon ist „Ich“, nur die Gegenseite wird
+getrennt. Android nutzt einen Vordergrunddienst (Mikrofon), damit die Aufnahme bei
+ausgeschaltetem Bildschirm weiterläuft.
+
 ## Diktat-Modus
 
 **Windows:** App läuft (minimierbar in den Tray). **Strg+Alt+Leertaste** startet überall
@@ -393,13 +482,14 @@ Einfügen wäre über eine eigene Tastatur/RecognitionService möglich, siehe Ro
 
 ## Roadmap-Ideen
 
-- Android: eigenes IME bzw. RecognitionService → Diktattext landet direkt im Textfeld
-  (wie FUTO Voice Input), statt über die Zwischenablage
 - Automatische Spracherkennung pro Segment, Modell-Wechsel ohne Neustart des Downloads
 - Aufnahmestopp durch Stille (VAD)
+- Meeting: Echo-Unterdrückung, wenn ohne Kopfhörer telefoniert wird
 
 ## Lizenzhinweise
 
 - Whisper-Modelle: MIT (OpenAI)
-- whisper.cpp: MIT
+- whisper.cpp, llama.cpp: MIT
+- sherpa-onnx: Apache-2.0; pyannote-Segmentierung: MIT; WeSpeaker-Modell: Apache-2.0
+- Sprachmodelle (Download aus der App): Qwen3 Apache-2.0, Gemma 3 Gemma Terms of Use
 - Die App itself: eigene Arbeit des Workspace-Besitzers

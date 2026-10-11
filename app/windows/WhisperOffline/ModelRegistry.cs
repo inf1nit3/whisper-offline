@@ -13,7 +13,9 @@ public record ModelInfo(
     long Size,
     string? Sha256,
     List<string> Pros,
-    List<string> Cons)
+    List<string> Cons,
+    /// Absolute Download-Adresse; fehlt sie, liegt die Datei neben dem Manifest.
+    string? Url = null)
 {
     public string SizeText =>
         Size >= 1L << 30 ? $"{Size / 1073741824.0:F1} GB" : $"{Size / 1048576.0:F0} MB";
@@ -45,20 +47,36 @@ public static class ModelRegistry
         return doc.Models;
     }
 
-    private record ManifestDoc(List<ModelInfo> Models);
+    private record ManifestDoc(List<ModelInfo> Models, List<ModelInfo>? Llm, List<ModelInfo>? Meeting);
+
+    /// Alles aus dem Manifest: Spracherkennung, Sprachmodelle, Meeting-Modelle.
+    public record Catalog(List<ModelInfo> Models, List<ModelInfo> Llm, List<ModelInfo> Meeting);
+
+    public static async Task<Catalog> FetchCatalog()
+    {
+        var json = await http.GetStringAsync(ModelConfig.ManifestUrl);
+        var doc = JsonSerializer.Deserialize<ManifestDoc>(json, JsonOpts)
+                  ?? throw new InvalidOperationException("Manifest leer");
+        return new Catalog(doc.Models, doc.Llm ?? new(), doc.Meeting ?? new());
+    }
 
     private static string BaseUrl =>
         ModelConfig.ManifestUrl[..(ModelConfig.ManifestUrl.LastIndexOf('/') + 1)];
 
     /// Download mit Fortschritt und SHA256-Prüfung, atomar per .part-Datei.
-    public static async Task DownloadModel(
-        ModelInfo info, IProgress<double>? progress, CancellationToken ct = default)
+    public static Task DownloadModel(
+        ModelInfo info, IProgress<double>? progress, CancellationToken ct = default) =>
+        DownloadTo(info, ModelsDir, progress, ct);
+
+    /// Wie DownloadModel, in ein beliebiges Verzeichnis (Sprachmodelle, Meeting-Modelle).
+    public static async Task DownloadTo(
+        ModelInfo info, string dir, IProgress<double>? progress, CancellationToken ct = default)
     {
-        Directory.CreateDirectory(ModelsDir);
-        var dest = Path.Combine(ModelsDir, info.File);
+        Directory.CreateDirectory(dir);
+        var dest = Path.Combine(dir, info.File);
         var part = dest + ".part";
 
-        using var resp = await http.GetAsync(BaseUrl + info.File,
+        using var resp = await http.GetAsync(info.Url ?? BaseUrl + info.File,
             HttpCompletionOption.ResponseHeadersRead, ct);
         resp.EnsureSuccessStatusCode();
         long total = resp.Content.Headers.ContentLength ?? info.Size;

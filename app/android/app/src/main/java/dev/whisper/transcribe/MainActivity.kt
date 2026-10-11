@@ -53,15 +53,24 @@ class MainActivity : ComponentActivity() {
     /// aus WhatsApp. Die App transkribiert sie, sobald ein Modell bereitsteht.
     private val sharedUris = mutableStateOf<List<Uri>>(emptyList())
 
+    /// Aus der Meeting-Benachrichtigung geöffnet → gleich den Meeting-Modus zeigen.
+    private val openMeeting = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Settings.migrate(this)
         // Nach einer Neuerstellung (etwa Dunkelmodus) nicht erneut transkribieren.
-        if (savedInstanceState == null) sharedUris.value = incomingUris(intent)
+        if (savedInstanceState == null) {
+            sharedUris.value = incomingUris(intent)
+            openMeeting.value = intent?.action == MeetingService.ACTION_OPEN_MEETING || MeetingSession.isActive
+        }
         enableEdgeToEdge()
         setContent {
             WhisperTheme {
-                App(sharedUris = sharedUris.value, onSharedConsumed = { sharedUris.value = emptyList() })
+                App(
+                    sharedUris = sharedUris.value, onSharedConsumed = { sharedUris.value = emptyList() },
+                    openMeeting = openMeeting.value, onMeetingOpened = { openMeeting.value = false },
+                )
             }
         }
     }
@@ -80,6 +89,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         incomingUris(intent).takeIf { it.isNotEmpty() }?.let { sharedUris.value = it }
+        if (intent.action == MeetingService.ACTION_OPEN_MEETING) openMeeting.value = true
     }
 
     private fun incomingUris(intent: Intent?): List<Uri> = when (intent?.action) {
@@ -101,7 +111,12 @@ private val LANGUAGES = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) {
+fun App(
+    sharedUris: List<Uri> = emptyList(),
+    onSharedConsumed: () -> Unit = {},
+    openMeeting: Boolean = false,
+    onMeetingOpened: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -129,8 +144,19 @@ fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) 
     var showHistory by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(listOf<HistoryEntry>()) }
     var showChangelog by remember { mutableStateOf(false) }
-    var showReplacements by remember { mutableStateOf(false) }
-    var replacementRules by remember { mutableStateOf(Replacements.rules) }
+    var showDictionary by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showStats by remember { mutableStateOf(false) }
+    var showLlm by remember { mutableStateOf(false) }
+    var showProfiles by remember { mutableStateOf(false) }
+    var showMeetingModels by remember { mutableStateOf(false) }
+    var showMeeting by remember { mutableStateOf(false) }
+    var showTransform by remember { mutableStateOf(false) }
+    LaunchedEffect(openMeeting) { if (openMeeting) { showMeeting = true; onMeetingOpened() } }
+    var translate by remember { mutableStateOf(Settings.translate(context)) }
+    // Live-Transkription: Text erscheint schon während der Aufnahme
+    var liveText by remember { mutableStateOf("") }
+    var live by remember { mutableStateOf<LiveTranscriber?>(null) }
     var showCrashLog by remember { mutableStateOf(false) }
     var changelogText by remember { mutableStateOf("") }
     var useGpu by remember { mutableStateOf(Settings.useGpu(context)) }
@@ -151,10 +177,10 @@ fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) 
     var downloadProgress by remember { mutableStateOf(0f) }
     var downloadError by remember { mutableStateOf<String?>(null) }
 
-    val recorder = remember { AudioRecorder() }
+    val recorder = remember { AudioRecorder(context.applicationContext) }
     // Wird die Aktivität verlassen oder neu erstellt, darf das Mikrofon nicht
     // im Hintergrund weiterlaufen.
-    DisposableEffect(recorder) { onDispose { if (recorder.isRecording) recorder.stop() } }
+    DisposableEffect(recorder) { onDispose { live?.stop(); if (recorder.isRecording) recorder.stop(cue = false) } }
 
     // Aufnahmezeit und Mikrofonpegel für den Aufnahmeknopf
     var recordingSeconds by remember { mutableIntStateOf(0) }
@@ -347,7 +373,7 @@ fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) 
         notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    fun setup() = TranscriptionJobs.Setup(modelFile ?: "", useGpu, isParakeet, language)
+    fun setup() = TranscriptionJobs.Setup(modelFile ?: "", useGpu, isParakeet, language, translate && !isParakeet)
 
     fun transcribeUris(uris: List<Uri>) {
         showStatus(null)
@@ -379,14 +405,25 @@ fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) 
             if (recorder.start()) {
                 recording = true
                 showStatus(null)
-            } else showStatus("Mikrofon konnte nicht geöffnet werden", isError = true)
+                liveText = ""
+                live = if (Settings.liveTranscription(context)) {
+                    LiveTranscriber(recorder, language, translate && !isParakeet, scope) { t ->
+                        scope.launch(Dispatchers.Main) { liveText = t }
+                    }.also { it.start() }
+                } else null
+            } else {
+                Cues.error(context)
+                showStatus("Mikrofon konnte nicht geöffnet werden", isError = true)
+            }
             return
         }
         val samples = recorder.stop()
         recording = false
-        if (samples.isEmpty()) return
+        val l = live
+        live = null
+        if (samples.isEmpty()) { l?.stop(); return }
         askForNotificationsOnce()
-        TranscriptionJobs.startSamples(context, samples, setup())
+        TranscriptionJobs.startSamples(context, samples, setup(), l)
     }
 
     fun copyTranscript(text: String) {
@@ -524,12 +561,35 @@ fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) 
     }
 
     // Zurück-Taste schließt Ansichten statt die App zu beenden
-    BackHandler(enabled = showHistory || showReplacements || (pickerVisible && localFiles.isNotEmpty())) {
+    val anySubOverlay = showLlm || showProfiles || showMeetingModels || showDictionary
+    BackHandler(enabled = anySubOverlay || showSettings || showStats || showHistory || showMeeting ||
+        (pickerVisible && localFiles.isNotEmpty())) {
         when {
-            showReplacements -> showReplacements = false
+            showLlm -> showLlm = false
+            showProfiles -> showProfiles = false
+            showMeetingModels -> showMeetingModels = false
+            showDictionary -> showDictionary = false
+            showSettings -> showSettings = false
+            showStats -> showStats = false
+            showMeeting -> showMeeting = false
             showHistory -> showHistory = false
             pickerVisible -> pickerVisible = false
         }
+    }
+
+    if (showTransform) {
+        TransformDialog(
+            text = transcript,
+            onDismiss = { showTransform = false },
+            onRun = { instruction, title ->
+                showTransform = false
+                val source = transcript
+                val lang = TextRules.guessLanguage(source).ifEmpty { TextPipeline.dictationLanguage(context) }
+                TranscriptionJobs.startTransform(context, source, title) { app ->
+                    Enhancer.transform(app, source, instruction, lang)
+                }
+            },
+        )
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -584,9 +644,25 @@ fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) 
                                     },
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Ersetzungen") },
-                                    leadingIcon = { Icon(Icons.Filled.FindReplace, null) },
-                                    onClick = { menu = false; showReplacements = true },
+                                    text = { Text("Meeting") },
+                                    leadingIcon = { Icon(Icons.Filled.Groups, null) },
+                                    enabled = modelReady && !busy && !recording,
+                                    onClick = { menu = false; showMeeting = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Wörterbuch") },
+                                    leadingIcon = { Icon(Icons.Filled.Spellcheck, null) },
+                                    onClick = { menu = false; showDictionary = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Statistiken") },
+                                    leadingIcon = { Icon(Icons.Filled.BarChart, null) },
+                                    onClick = { menu = false; showStats = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Einstellungen") },
+                                    leadingIcon = { Icon(Icons.Filled.Settings, null) },
+                                    onClick = { menu = false; showSettings = true },
                                 )
                                 if (CrashLog.hasLog(context)) DropdownMenuItem(
                                     text = { Text("Fehlerbericht") },
@@ -670,8 +746,11 @@ fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) 
                                     onClick = { langExpanded = true },
                                     enabled = !isParakeet,
                                     label = {
-                                        Text(if (isParakeet) "Mehrsprachig"
-                                             else LANGUAGES.first { it.first == language }.second.substringBefore(" ("))
+                                        Text(when {
+                                            isParakeet -> "Mehrsprachig"
+                                            translate -> LANGUAGES.first { it.first == language }.second.substringBefore(" (") + " → EN"
+                                            else -> LANGUAGES.first { it.first == language }.second.substringBefore(" (")
+                                        })
                                     },
                                     leadingIcon = { Icon(Icons.Filled.Translate, null, Modifier.size(18.dp)) },
                                     trailingIcon = if (isParakeet) null else {
@@ -690,6 +769,16 @@ fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) 
                                             },
                                         )
                                     }
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = { Text("Ins Englische übersetzen") },
+                                        trailingIcon = { Checkbox(checked = translate, onCheckedChange = null) },
+                                        onClick = {
+                                            translate = !translate
+                                            Settings.setTranslate(context, translate)
+                                            langExpanded = false
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -747,13 +836,15 @@ fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) 
 
                 @Composable
                 fun Transcript(modifier: Modifier) = TranscriptCard(
-                    text = transcript,
+                    text = if (recording && liveText.isNotEmpty()) liveText else transcript,
+                    live = recording && liveText.isNotEmpty(),
                     onCopy = { copyTranscript(transcript) },
                     onShare = { shareTranscript() },
                     onEdit = { edited ->
                         HistoryStore.replaceText(context, transcript, edited)
                         transcript = edited
                     },
+                    onTransform = if (LlmManager.isConfigured(context) && !busy) ({ showTransform = true }) else null,
                     modifier = modifier,
                 )
 
@@ -826,14 +917,26 @@ fun App(sharedUris: List<Uri> = emptyList(), onSharedConsumed: () -> Unit = {}) 
             )
         }
 
-        if (showReplacements) {
-            ReplacementsOverlay(
-                rules = replacementRules,
-                onChange = {
-                    Replacements.save(context, it)
-                    replacementRules = Replacements.rules
-                },
-                onClose = { showReplacements = false },
+        if (showSettings) {
+            SettingsOverlay(
+                onClose = { showSettings = false },
+                onOpenDictionary = { showDictionary = true },
+                onOpenLlm = { showLlm = true },
+                onOpenProfiles = { showProfiles = true },
+                onOpenMeetingModels = { showMeetingModels = true },
+                onTranslateChanged = { translate = it },
+            )
+        }
+        if (showStats) StatsOverlay(onClose = { showStats = false })
+        if (showDictionary) DictionaryOverlay(onClose = { showDictionary = false })
+        if (showLlm) LlmPickerOverlay(onClose = { showLlm = false })
+        if (showProfiles) AppProfilesOverlay(onClose = { showProfiles = false })
+        if (showMeetingModels) MeetingModelsOverlay(onClose = { showMeetingModels = false })
+        if (showMeeting) {
+            MeetingOverlay(
+                modelFile = modelFile,
+                language = language,
+                onClose = { showMeeting = false },
             )
         }
 

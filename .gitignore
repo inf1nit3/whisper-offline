@@ -38,3 +38,21 @@ tools/vkh-build/
 
 # Release-Signierung (niemals committen)
 keystore/
+
+# llama.cpp (Quellcode, wie whisper.cpp nicht eingecheckt) und LLM-Builds
+engine/llama.cpp/
+engine/llm/build*/
+app/android/app/src/main/jniLibs/*/libllm_jni.so
+app/android/app/src/main/assets/prompts.json
+models/llm/
+
+# Vorgebaute Abhängigkeiten (tools/fetch-android-deps.sh)
+app/android/app/libs/*.aar
+models/meeting/
+
+# Testprojekt-Builds
+app/windows/WhisperOffline.Tests/bin/
+app/windows/WhisperOffline.Tests/obj/
+
+# Lokale Analyse einer fremden App — nicht veröffentlichen
+docs/whisperbar-vergleich.md

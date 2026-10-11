@@ -73,3 +73,7 @@ target_include_directories(whisper_jni PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../whisper.cpp/ggml/include)
 find_library(log-lib log)
 target_link_libraries(whisper_jni PRIVATE whisper parakeet ${log-lib})
+# Nur die JNI-Funktionen exportieren. libllm_jni.so bringt eine eigene
+# ggml-Kopie (die von llama.cpp) mit; sichtbare ggml-Symbole beider
+# Bibliotheken könnten sich sonst gegenseitig überdecken.
+target_link_options(whisper_jni PRIVATE "-Wl,--exclude-libs,ALL")

@@ -9,6 +9,8 @@ internal static class PasteHelper
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const ushort VK_CONTROL = 0x11;
     private const ushort VK_V = 0x56;
+    private const ushort VK_C = 0x43;
+    private const ushort VK_RETURN = 0x0D;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct KEYBDINPUT
@@ -58,7 +60,7 @@ internal static class PasteHelper
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-    public static IntPtr ForegroundWindow() => GetForegroundWindow();
+    public static IntPtr ForegroundWindow() => OperatingSystem.IsWindows() ? GetForegroundWindow() : IntPtr.Zero;
 
     public static bool FocusWindow(IntPtr hWnd) =>
         hWnd != IntPtr.Zero && SetForegroundWindow(hWnd);
@@ -70,6 +72,22 @@ internal static class PasteHelper
         Key(VK_V, down: true);
         Key(VK_V, down: false);
         Key(VK_CONTROL, down: false);
+    }
+
+    /// Strg+C: markierten Text kopieren (Auswahl bearbeiten).
+    public static void CtrlC()
+    {
+        Key(VK_CONTROL, down: true);
+        Key(VK_C, down: true);
+        Key(VK_C, down: false);
+        Key(VK_CONTROL, down: false);
+    }
+
+    /// Enter nach dem Einfügen (Chat-Apps, Terminals).
+    public static void Enter()
+    {
+        Key(VK_RETURN, down: true);
+        Key(VK_RETURN, down: false);
     }
 
     private static void Key(ushort vk, bool down)
