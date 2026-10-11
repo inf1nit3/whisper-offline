@@ -1,0 +1,21 @@
+{
+  "_comment": "Mitgelieferte Standard-Wortliste, gemeinsam für Android (Assets) und Windows (eingebettete Ressource): häufige englische Fach- und Alltagbegriffe, wie sie im Deutschen üblich sind — Spracherkennung schreibt sie in deutscher Umgebung gern phonetisch oder eingedeutscht. Beim ersten Start wird die Liste ins Wörterbuch gesät (löschbar); die Reihenfolge ist zugleich die Prompt-Priorität, falls die ~800 Zeichen des Whisper-Prompts nicht reichen. Eigene Wörter des Nutzers stehen im Prompt immer vor dieser Liste.",
+  "words": [
+    "Deployment", "Follow-up", "Pull Request", "Code Review", "User Story",
+    "Best Practice", "Lessons Learned", "Workaround", "Troubleshooting", "Deliverable",
+    "Benchmark", "Brainstorming", "Retrospektive", "Stand-up", "Kick-off",
+    "Go-Live", "Rollout", "Rollback", "Hotfix", "Bugfix",
+    "Roadmap", "Backlog", "Sprint", "Milestone", "Timeline",
+    "Alignment", "Takeaway", "Deep Dive", "Stakeholder", "Onboarding",
+    "Pipeline", "Release", "Feature", "Repository", "Branch",
+    "Merge", "Commit", "Snapshot", "Staging", "Migration",
+    "Changelog", "Monitoring", "Incident", "Endpoint", "Request",
+    "Response", "Token", "Session", "Cache", "Backup",
+    "Cluster", "Frontend", "Backend", "Framework", "Container",
+    "Open Source", "DevOps", "Dashboard", "Screenshot", "API",
+    "SDK", "Usability", "Feedback", "Deadline", "Challenge",
+    "Insight", "Outcome", "Forecast", "Reporting", "Marketing",
+    "Branding", "Newsletter", "Webinar", "Setup", "Launch",
+    "Update"
+  ]
+}

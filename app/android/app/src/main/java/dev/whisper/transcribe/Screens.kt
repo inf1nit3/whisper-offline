@@ -306,6 +306,11 @@ private fun WordsContent(words: List<String>, onChange: (List<String>) -> Unit) 
         if (words.isEmpty()) {
             EmptyState(Icons.Filled.Spellcheck, "Noch keine eigenen Wörter",
                 "Typische Kandidaten: Namen, Firmen, Produkte, Fachbegriffe.")
+            if (Vocabulary.defaults.isNotEmpty()) {
+                TextButton(onClick = { onChange(Vocabulary.defaults) }) {
+                    Text("Häufige englische Begriffe hinzufügen")
+                }
+            }
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             items(words) { w ->

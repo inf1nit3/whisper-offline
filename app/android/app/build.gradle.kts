@@ -66,8 +66,10 @@ dependencies {
 /// synchronisieren — der In-App-Changelog kann so nie einen Stand verpassen.
 tasks.register<Copy>("syncChangelog") {
     from(rootProject.file("../../CHANGELOG.md"))
-    // Anweisungen für das lokale Sprachmodell — gemeinsam mit der Windows-App
+    // Anweisungen für das lokale Sprachmodell und Standard-Wortliste —
+    // gemeinsam mit der Windows-App
     from(rootProject.file("../shared/prompts.json"))
+    from(rootProject.file("../shared/vocabulary.json"))
     into("src/main/assets")
 }
 tasks.named("preBuild") { dependsOn("syncChangelog") }

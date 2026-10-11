@@ -17,13 +17,30 @@ object Vocabulary {
     @Volatile var words: List<String> = emptyList()
         private set
 
+    /// Mitgelieferte Standardliste häufiger englischer Begriffe (shared/
+    /// vocabulary.json) — beim ersten Start als Wörterbuch-Vorbelegung.
+    @Volatile var defaults: List<String> = emptyList()
+        private set
+
+    private fun defaultsLower(): Set<String> = defaults.mapTo(HashSet()) { it.lowercase() }
+
     fun init(context: Context) {
-        val json = Settings.prefs(context).getString(KEY, null)
+        defaults = loadDefaults(context)
+        val stored = Settings.prefs(context).getString(KEY, null)
         words = runCatching {
-            val arr = JSONArray(json ?: "[]")
+            val arr = JSONArray(stored ?: "[]")
             List(arr.length()) { arr.getString(it) }
         }.getOrDefault(emptyList())
+        // Erster Start: Standardliste säen. Wer das Wörterbuch einmal geöffnet
+        // und gespeichert hat (auch leer), behält seinen Stand.
+        if (stored == null && defaults.isNotEmpty()) save(context, defaults)
     }
+
+    private fun loadDefaults(context: Context): List<String> = runCatching {
+        val a = JSONObject(context.assets.open("vocabulary.json").bufferedReader().use { it.readText() })
+            .getJSONArray("words")
+        List(a.length()) { a.getString(it) }.map { it.trim() }.filter { it.isNotEmpty() }
+    }.getOrDefault(emptyList())
 
     fun save(context: Context, newWords: List<String>) {
         words = newWords.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }
@@ -33,10 +50,14 @@ object Vocabulary {
     /// Prompt für Whisper. Eine schlichte Aufzählung beeinflusst die Schreibweise,
     /// ohne den Stil oder die Sprache des Transkripts mitzuziehen. Whisper nutzt
     /// höchstens 224 Prompt-Tokens — mehr als ~800 Zeichen bringen nichts.
-    fun prompt(): String {
+    /// Eigene Wörter stehen vor den Standard-Begriffen: Das begrenzte Budget
+    /// gehört dem, was der Nutzer selbst gepflegt hat.
+    fun prompt(): String = buildPrompt(words, defaultsLower())
+
+    internal fun buildPrompt(words: List<String>, defaults: Set<String>): String {
         if (words.isEmpty()) return ""
         val sb = StringBuilder()
-        for (w in words) {
+        for (w in words.sortedBy { it.lowercase() in defaults }) {
             if (sb.length + w.length + 2 > 800) break
             if (sb.isNotEmpty()) sb.append(", ")
             sb.append(w)
