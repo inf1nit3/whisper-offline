@@ -1,5 +1,19 @@
 # Changelog
 
+## v3.1
+
+Kleines Update fürs Wörterbuch.
+
+**Wörterbuch vorbelegt**
+- Beim ersten Start enthält das Wörterbuch 76 häufige englische Begriffe,
+  wie sie im Deutschen üblich sind (Deployment, Pull Request, Backlog,
+  Stakeholder, Roadmap …) — die Spracherkennung schreibt sie in deutscher
+  Umgebung sonst gern phonetisch oder eingedeutscht
+- Einträge lassen sich wie eigene Wörter löschen; eine bestehende eigene
+  Liste bleibt unangetastet
+- Leeres Wörterbuch: Knopf „Häufige englische Begriffe hinzufügen“
+- Im Whisper-Prompt stehen eigene Wörter jetzt vor der Standardliste
+
 ## v3.0
 
 Großes Update — alles läuft weiterhin lokal auf deinem Gerät.
