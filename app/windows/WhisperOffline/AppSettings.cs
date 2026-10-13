@@ -50,6 +50,9 @@ public sealed class AppSettings
 
     /// Eigene Wörter: Whisper-Prompt + unscharfe Korrektur (Vocabulary).
     public List<string> Vocabulary { get; set; } = new();
+    /// Wörterbuch wurde schon einmal mit der Standardliste vorbelegt —
+    /// passiert nur beim ersten Start, nie wieder danach.
+    public bool VocabularySeeded { get; set; } = false;
     public List<ReplacementRule> Replacements { get; set; } = new();
     public List<Snippet> Snippets { get; set; } = new();
 
@@ -144,6 +147,17 @@ public sealed class AppSettings
             File.WriteAllText(Path, JsonSerializer.Serialize(this, JsonOpts));
         }
         catch { }
+    }
+
+    /// Einmalige Vorbelegung des Wörterbuchs mit der mitgelieferten Standardliste
+    /// (häufige englische Begriffe im Deutschen). Eine bereits gepflegte Liste
+    /// bleibt unangetastet.
+    public void SeedVocabulary()
+    {
+        if (VocabularySeeded || VocabularyDefaults.Words.Count == 0) return;
+        VocabularySeeded = true;
+        if (Vocabulary.Count == 0) Vocabulary = new List<string>(VocabularyDefaults.Words);
+        Save();
     }
 
     // -----------------------------------------------------------------------

@@ -322,6 +322,16 @@ public partial class MainWindow
     {
         var list = new WrapPanel { ItemSpacing = 6, LineSpacing = 6 };
         var count = Hint("");
+        // Leeres Wörterbuch: Standardliste (häufige englische Begriffe) nachladen
+        var restore = new Button { Content = "Häufige englische Begriffe hinzufügen" };
+        restore.Click += (_, _) =>
+        {
+            foreach (var w in VocabularyDefaults.Words)
+                if (!settings.Vocabulary.Any(x => x.Equals(w, StringComparison.OrdinalIgnoreCase)))
+                    settings.Vocabulary.Add(w);
+            settings.Save();
+            Refresh();
+        };
         void Refresh()
         {
             list.Children.Clear();
@@ -332,6 +342,7 @@ public partial class MainWindow
                 b.Click += (_, _) => { settings.Vocabulary.Remove(w); settings.Save(); Refresh(); };
                 list.Children.Add(b);
             }
+            restore.IsVisible = settings.Vocabulary.Count == 0 && VocabularyDefaults.Words.Count > 0;
             count.Text = $"{settings.Vocabulary.Count} Wörter";
         }
         Refresh();
@@ -351,7 +362,7 @@ public partial class MainWindow
             {
                 Hint("Namen und Fachbegriffe in der gewünschten Schreibweise. Whisper bekommt die Liste vorab und schreibt sie dann eher richtig; ähnlich Klingendes („Scheiße Wasser“) wird danach korrigiert. Enhance hält sich ebenfalls daran."),
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { input, add } },
-                count, list,
+                count, restore, list,
             },
         });
     }

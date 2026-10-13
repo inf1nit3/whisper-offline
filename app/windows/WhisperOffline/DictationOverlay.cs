@@ -18,10 +18,9 @@ public sealed class DictationOverlay : Window
         Foreground = Brushes.White, FontSize = 13, TextWrapping = TextWrapping.Wrap, MaxLines = 2,
         TextTrimming = TextTrimming.CharacterEllipsis, IsVisible = false,
     };
-    private readonly ProgressBar level = new() { Minimum = 0, Maximum = 1, Height = 4, MinWidth = 0, Foreground = Brushes.IndianRed };
+    private readonly WaveformView level = new() { Height = 28 };
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(80) };
     private DateTime started;
-    private Func<float>? levelSource;
 
     public DictationOverlay()
     {
@@ -52,7 +51,6 @@ public sealed class DictationOverlay : Window
         };
         timer.Tick += (_, _) =>
         {
-            if (levelSource != null) level.Value = levelSource();
             if (started != default) detail.Text = (DateTime.Now - started).ToString(@"m\:ss") + (modeText.Length > 0 ? "  ·  " + modeText : "");
         };
     }
@@ -73,11 +71,9 @@ public sealed class DictationOverlay : Window
     public void ShowRecording(Func<float> levelOf, string mode)
     {
         started = DateTime.Now;
-        levelSource = levelOf;
         modeText = mode;
         state.Text = "🎙  Aufnahme";
-        level.IsVisible = true;
-        level.IsIndeterminate = false;
+        level.ShowRecording(levelOf);
         live.Text = "";
         live.IsVisible = false;
         if (!IsVisible) { Place(); Show(); }
@@ -90,22 +86,20 @@ public sealed class DictationOverlay : Window
         live.IsVisible = text.Length > 0;
     }
 
-    /// Transkribieren, Verbessern …: Pegel wird zum unbestimmten Balken.
+    /// Transkribieren, Verbessern …: die Welle wird ruhig.
     public void ShowWorking(string what)
     {
         state.Text = what;
-        levelSource = null;
         started = default;
         detail.Text = modeText;
-        level.IsVisible = true;
-        level.IsIndeterminate = true;
+        level.ShowWorking();
         if (!IsVisible) { Place(); Show(); }
     }
 
     public void HideOverlay()
     {
         timer.Stop();
-        levelSource = null;
+        level.ShowIdle();
         Hide();
     }
 }

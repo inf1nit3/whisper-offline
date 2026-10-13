@@ -794,8 +794,20 @@ fun App(
                             size = if (compact) 150.dp else 200.dp,
                             recording = recording,
                             level = micLevel,
+                            working = busy && !recording,
                             enabled = modelReady && !busy && downloadingFile == null,
                             onClick = { toggleRecording() },
+                        )
+                        LiveWaveform(
+                            state = when {
+                                recording -> WaveState.RECORDING
+                                busy -> WaveState.WORKING
+                                else -> WaveState.IDLE
+                            },
+                            level = micLevel,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(if (compact) 36.dp else 56.dp),
                         )
                         Text(
                             when {

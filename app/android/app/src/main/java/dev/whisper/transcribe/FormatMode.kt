@@ -16,6 +16,8 @@ enum class FormatMode(val key: String, val label: String) {
     TODO("todo", "Aufgabenliste"),
     /// Betreffzeile — nur automatisch erkannt, nicht wählbar.
     SUBJECT("subject", "Betreff"),
+    /// Aufzählung — nur per gesprochener Anweisung („bitte als Liste“).
+    BULLETS("bullets", "Liste"),
     /// Keine Nachbearbeitung durch das Sprachmodell.
     RAW("raw", "Roh");
 

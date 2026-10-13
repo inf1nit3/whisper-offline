@@ -116,4 +116,29 @@ public class TextLogicTests
         Assert.InRange(r[0].Start, 0.7f, 1.0f);
         Assert.InRange(r[1].Start, 5.9f, 6.4f);
     }
+
+    [Fact] public void PromptPutsOwnWordsBeforeDefaults()
+    {
+        var defaults = new HashSet<string> { "deployment", "sprint", "pull request" };
+        var p = TextMatching.Prompt(new[] { "Deployment", "Scheisssewasser", "Sprint" }, defaults);
+        Assert.True(p.IndexOf("Scheisssewasser") < p.IndexOf("Deployment"));
+        Assert.EndsWith(".", p);
+        // Relative Reihenfolge bleibt je Gruppe erhalten
+        Assert.Equal("Backlog, Meier, Deployment.",
+            TextMatching.Prompt(new[] { "Backlog", "Deployment", "Meier" }, defaults));
+    }
+
+    [Fact] public void PromptStaysWithinBudget()
+    {
+        var words = Enumerable.Range(1, 50).Select(i => $"Wort{i} mit Länge").ToList();
+        Assert.True(TextMatching.Prompt(words).Length <= 801);
+    }
+
+    [Fact] public void VocabularyDefaultsEmbedded()
+    {
+        // Eingebettete Standardliste (shared/vocabulary.json) muss ladbar sein
+        Assert.True(VocabularyDefaults.Words.Count > 50);
+        Assert.Contains("Deployment", VocabularyDefaults.Words);
+        Assert.Contains(VocabularyDefaults.Lower, w => w == "deployment");
+    }
 }

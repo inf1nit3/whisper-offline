@@ -28,11 +28,15 @@ object Prompts {
 
     private const val OUTPUT_RULE = "Output only the rewritten text"
 
-    fun enhanceSystem(context: Context, mode: FormatMode, words: List<String>, language: String): String {
+    /// [target]: Zielsprache aus einer gesprochenen Anweisung („das Ganze bitte
+    /// auf Englisch“) — ersetzt die Regel „in der Sprache des Diktats bleiben“.
+    fun enhanceSystem(context: Context, mode: FormatMode, words: List<String>, language: String,
+                      target: String? = null): String {
         val p = get(context)
         val modeLine = p.getJSONObject("modes").optString(mode.key, p.getJSONObject("modes").getString("standard"))
         val wordsLine = if (words.isEmpty()) "" else p.getString("words").replace("{{WORDS}}", words.joinToString(", "))
-        val lang = languageLine(context, language, "language")
+        val lang = target?.let { languageLine(context, it, "translate_to") }?.ifEmpty { null }
+            ?: languageLine(context, language, "language")
         val custom = Settings.enhancePrompt(context)
         if (custom != null) {
             // Eigene Regeln: Sprache, Modus, Wortliste und die reine Textausgabe
@@ -118,7 +122,10 @@ object LlmManager {
 /// Nachbearbeitung durch das lokale Sprachmodell.
 object Enhancer {
 
-    data class Outcome(val text: String?, val error: String? = null, val cancelled: Boolean = false)
+    /// [rejected]: Das Modell hat geantwortet, das Ergebnis aber die
+    /// Plausibilitätsprüfung nicht bestanden ([error] nennt den Grund).
+    data class Outcome(val text: String?, val error: String? = null, val cancelled: Boolean = false,
+                       val rejected: Boolean = false)
 
     fun cancel() = LlmBridge.cancel()
 
@@ -141,16 +148,24 @@ object Enhancer {
         }
 
     /// Diktat bereinigen und für [mode] formatieren.
-    suspend fun enhance(context: Context, text: String, mode: FormatMode, language: String): Outcome {
-        val system = Prompts.enhanceSystem(context, mode, Vocabulary.words, language)
+    /// [target]: Zielsprache, wenn das Diktat übersetzt werden soll.
+    suspend fun enhance(context: Context, text: String, mode: FormatMode, language: String,
+                        target: String? = null): Outcome {
+        val system = Prompts.enhanceSystem(context, mode, Vocabulary.words, language, target)
         val o = run(context, system, "<dictation>\n$text\n</dictation>", text)
-        return o.copy(text = o.text?.let { clean(it, mode, text) })
+        return checked(text, o.copy(text = o.text?.let { clean(it, mode, text) }), transform = false)
     }
 
     /// Markierten Text nach einer Anweisung umformen.
     suspend fun transform(context: Context, text: String, instruction: String, language: String): Outcome {
         val o = run(context, Prompts.selectionSystem(context, language, Vocabulary.words), Prompts.selectionUser(context, instruction, text), text)
-        return o.copy(text = o.text?.let { clean(it, FormatMode.STANDARD, text, capitalize = false) })
+        return checked(text, o.copy(text = o.text?.let { clean(it, FormatMode.STANDARD, text, capitalize = false) }), transform = true)
+    }
+
+    private fun checked(input: String, o: Outcome, transform: Boolean): Outcome {
+        val out = o.text ?: return o
+        val reason = EnhanceCheck.reject(input, out, transform) ?: return o
+        return Outcome(null, reason, rejected = true)
     }
 
     /// Antwort aufräumen: mitgeschriebene Tags, umschließende Anführungszeichen,
@@ -164,7 +179,7 @@ object Enhancer {
         }
         s = TextRules.tidy(s)
         if (capitalize && mode in setOf(FormatMode.STANDARD, FormatMode.EMAIL, FormatMode.DOCUMENT,
-                FormatMode.NOTE, FormatMode.TODO, FormatMode.SUBJECT)) {
+                FormatMode.NOTE, FormatMode.TODO, FormatMode.BULLETS, FormatMode.SUBJECT)) {
             s = TextRules.capitalizeSentences(s)
         }
         if (mode == FormatMode.SUBJECT) s = s.trimEnd('.')
@@ -235,11 +250,15 @@ object TextPipeline {
         if (!LlmManager.isConfigured(context)) return Result(text, note = "Enhance: kein Sprachmodell gewählt")
         val lang = language.ifEmpty { TextRules.guessLanguage(text) }
         text = TextRules.removeFillers(text, lang)
-        val effective = if (mode == FormatMode.AUTO) FormatMode.STANDARD else mode
-        val o = Enhancer.enhance(context, text, effective, lang)
+        // „…, bitte als Liste.“ / „Das Ganze bitte auf Englisch.“ — gilt für dieses Diktat
+        val spoken = SpokenDirectives.parse(text)
+        text = spoken.text
+        val effective = spoken.mode ?: if (mode == FormatMode.AUTO) FormatMode.STANDARD else mode
+        val o = Enhancer.enhance(context, text, effective, lang, spoken.language?.takeIf { it != lang })
         return when {
             o.cancelled -> Result(text, cancelled = true, note = "Enhance abgebrochen — Rohtext übernommen")
             o.text != null -> Result(o.text, enhanced = true)
+            o.rejected -> Result(text, note = "Ohne Enhance eingefügt: ${o.error}")
             else -> Result(text, note = "Enhance fehlgeschlagen: ${o.error}")
         }
     }

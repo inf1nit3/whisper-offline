@@ -31,12 +31,14 @@ public static class Prompts
 
     private const string OutputRule = "Output only the rewritten text";
 
-    public static string EnhanceSystem(AppSettings s, FormatMode mode, string language)
+    /// [target]: Zielsprache aus einer gesprochenen Anweisung („das Ganze bitte
+    /// auf Englisch“) — ersetzt die Regel „in der Sprache des Diktats bleiben“.
+    public static string EnhanceSystem(AppSettings s, FormatMode mode, string language, string? target = null)
     {
         var modes = Get()["modes"]!;
         var modeLine = (modes[mode.Key()] ?? modes["standard"])!.GetValue<string>();
         var wordsLine = s.Vocabulary.Count == 0 ? "" : Str("words").Replace("{{WORDS}}", string.Join(", ", s.Vocabulary));
-        var lang = LanguageLine(language, "language");
+        var lang = target != null && LanguageLine(target, "translate_to") is { Length: > 0 } t ? t : LanguageLine(language, "language");
         var baseText = Str("enhance_system");
         if (!string.IsNullOrWhiteSpace(s.EnhancePrompt))
         {
@@ -273,7 +275,8 @@ public static class CliEnhancer
 /// Nachbearbeitung durch das Sprachmodell (lokal oder per CLI).
 public static class Enhancer
 {
-    public record Outcome(string? Text, string? Error = null, bool Cancelled = false);
+    /// Rejected: Antwort kam, hat aber die Plausibilitätsprüfung nicht bestanden.
+    public record Outcome(string? Text, string? Error = null, bool Cancelled = false, bool Rejected = false);
 
     public static string LlmDir => Path.Combine(WhisperCli.BaseDir, "models", "llm");
 
@@ -300,17 +303,23 @@ public static class Enhancer
         catch (Exception e) { return new Outcome(null, e.Message); }
     }
 
-    public static async Task<Outcome> EnhanceAsync(AppSettings s, string text, FormatMode mode, string language, CancellationToken ct)
+    public static async Task<Outcome> EnhanceAsync(AppSettings s, string text, FormatMode mode, string language,
+        CancellationToken ct, string? target = null)
     {
-        var o = await RunAsync(s, Prompts.EnhanceSystem(s, mode, language), "<dictation>\n" + text + "\n</dictation>", text, ct);
-        return o.Text == null ? o : o with { Text = Clean(s, o.Text, mode, text) };
+        var o = await RunAsync(s, Prompts.EnhanceSystem(s, mode, language, target), "<dictation>\n" + text + "\n</dictation>", text, ct);
+        return Checked(text, o.Text == null ? o : o with { Text = Clean(s, o.Text, mode, text) }, transform: false);
     }
 
     public static async Task<Outcome> TransformAsync(AppSettings s, string text, string instruction, string language, CancellationToken ct)
     {
         var o = await RunAsync(s, Prompts.SelectionSystem(s, language), Prompts.SelectionUser(instruction, text), text, ct);
-        return o.Text == null ? o : o with { Text = Clean(s, o.Text, FormatMode.Standard, text, capitalize: false) };
+        return Checked(text, o.Text == null ? o : o with { Text = Clean(s, o.Text, FormatMode.Standard, text, capitalize: false) }, transform: true);
     }
+
+    private static Outcome Checked(string input, Outcome o, bool transform) =>
+        o.Text != null && EnhanceCheck.Reject(input, o.Text, transform) is { } reason
+            ? new Outcome(null, reason, Rejected: true)
+            : o;
 
     private static string Clean(AppSettings s, string output, FormatMode mode, string original, bool capitalize = true)
     {
@@ -318,7 +327,7 @@ public static class Enhancer
         if (t.Length >= 2 && "\"„“«".Contains(t[0]) && "\"“”»".Contains(t[^1]) && (original.Length == 0 || !"\"„“«".Contains(original[0])))
             t = t[1..^1].Trim();
         t = TextRules.Tidy(t);
-        if (capitalize && mode is FormatMode.Standard or FormatMode.Email or FormatMode.Document or FormatMode.Note or FormatMode.Todo or FormatMode.Subject)
+        if (capitalize && mode is FormatMode.Standard or FormatMode.Email or FormatMode.Document or FormatMode.Note or FormatMode.Todo or FormatMode.Bullets or FormatMode.Subject)
             t = TextRules.CapitalizeSentences(t);
         if (mode == FormatMode.Subject) t = t.TrimEnd('.');
         t = WordFixer.Correct(t, s.Vocabulary);
@@ -380,9 +389,14 @@ public static class TextPipeline
         if (!Enhancer.IsConfigured(s)) return new Result(text, Note: "Enhance: kein Sprachmodell eingerichtet");
         var lang = language.Length > 0 ? language : TextRules.GuessLanguage(text);
         text = TextRules.RemoveFillers(text, lang);
-        var o = await Enhancer.EnhanceAsync(s, text, mode == FormatMode.Auto ? FormatMode.Standard : mode, lang, ct);
+        // „…, bitte als Liste.“ / „Das Ganze bitte auf Englisch.“ — gilt für dieses Diktat
+        var spoken = SpokenDirectives.Parse(text);
+        text = spoken.Text;
+        var effective = spoken.Mode ?? (mode == FormatMode.Auto ? FormatMode.Standard : mode);
+        var o = await Enhancer.EnhanceAsync(s, text, effective, lang, ct, spoken.Language != lang ? spoken.Language : null);
         if (o.Cancelled) return new Result(text, Note: "Enhance abgebrochen — Rohtext übernommen");
-        return o.Text != null ? new Result(o.Text, Enhanced: true) : new Result(text, Note: "Enhance fehlgeschlagen: " + o.Error);
+        if (o.Text != null) return new Result(o.Text, Enhanced: true);
+        return new Result(text, Note: (o.Rejected ? "Ohne Enhance eingefügt: " : "Enhance fehlgeschlagen: ") + o.Error);
     }
 }
 
@@ -400,7 +414,7 @@ public static class Transcriber
             var language = string.IsNullOrEmpty(lang) ? "auto" : lang;
             if (WhisperNative.EnsureLoaded(WhisperCli.SelectedModel))
             {
-                WhisperNative.SetPrompt(TextMatching.Prompt(s.Vocabulary));
+                WhisperNative.SetPrompt(TextMatching.Prompt(s.Vocabulary, VocabularyDefaults.Lower));
                 WhisperNative.SetTranslate(translate && !WhisperNative.IsParakeet);
                 var native = WhisperNative.Transcribe(samples, language, s.ShortCtx);
                 if (native == null) return "";
@@ -410,7 +424,7 @@ public static class Transcriber
             {
                 var wav = Path.Combine(Path.GetTempPath(), "whisper_offline_rec.wav");
                 WavWriter.Write16kMono(wav, samples);
-                raw = WhisperCli.Transcribe(wav, lang, out _, TextMatching.Prompt(s.Vocabulary), translate);
+                raw = WhisperCli.Transcribe(wav, lang, out _, TextMatching.Prompt(s.Vocabulary, VocabularyDefaults.Lower), translate);
             }
         }
         return Post(raw, s);

@@ -1,5 +1,36 @@
 # Changelog
 
+## v3.2
+
+**Anweisungen einfach mitsprechen**
+- Am Anfang oder Ende eines Diktats: „…, bitte als Liste.“ macht eine
+  Aufzählung, „als To-do-Liste“ eine Aufgabenliste mit Kästchen
+- „Das Ganze bitte auf Englisch.“ / „in English please“ übersetzt das
+  Diktat — Englisch, Deutsch, Französisch, Spanisch, Italienisch und mehr
+- Die Anweisung selbst landet nicht im Text. Inhalt wie „Die Präsentation
+  halte ich auf Englisch.“ bleibt unangetastet
+- Braucht Enhance (lokales Sprachmodell)
+
+**Enhance zuverlässiger**
+- Antwortet das Sprachmodell, statt den Text zu bearbeiten („Hier ist der
+  überarbeitete Text …“), oder ist das Ergebnis viel länger oder kürzer als
+  das Diktat, wird der unveränderte Text eingefügt — mit Hinweis
+- Meeting-Notizen: Aufgaben als Kästchen-Liste mit Person und Frist, sofern
+  im Gespräch genannt
+
+**Neue Aufnahme-Anzeige**
+- Eine Wellenform folgt beim Sprechen dem Mikrofonpegel und wird beim
+  Transkribieren ruhig — Android im Hauptbildschirm, Windows im Hauptfenster
+  und im Diktat-Fenster
+- Android: Der Aufnahmeknopf wird während der Aufnahme zum Stopp-Quadrat
+  und zeigt beim Transkribieren den Fortschritt
+- Windows: Der Aufnahmeknopf wird während der Aufnahme rot
+
+**Windows**
+- Wörterbuch beim ersten Start mit 76 häufigen englischen Begriffen
+  vorbelegt (wie Android seit v3.1); leeres Wörterbuch: Knopf „Häufige
+  englische Begriffe hinzufügen“
+
 ## v3.1
 
 Kleines Update fürs Wörterbuch.

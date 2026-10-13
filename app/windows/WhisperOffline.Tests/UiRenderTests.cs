@@ -24,6 +24,19 @@ public class UiRenderTests
         w.CaptureRenderedFrame()?.Save(Path.Combine(dir, name + ".png"));
     }
 
+    /// Der DispatcherTimer feuert headless kaum — Wellenform-Ticks direkt auslösen.
+    private static void Settle(params WaveformView[] waves)
+    {
+        var tick = typeof(WaveformView).GetMethod("Tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        for (int i = 0; i < 30; i++)
+        {
+            Thread.Sleep(16);
+            foreach (var wv in waves) tick.Invoke(wv, null);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        }
+        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+    }
+
     [AvaloniaFact] public void RenderPanels()
     {
         var dir = Environment.GetEnvironmentVariable("WHISPER_UI_SHOTS");
@@ -37,6 +50,13 @@ public class UiRenderTests
         void Call(string m, params object[] a) => t.GetMethod(m, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(w, a);
         Call("ClosePicker");
         Shot(w, dir, "0-main");
+        // Wellenform während einer Aufnahme (Timer laufen lassen, bis die Welle steht)
+        var wave = (WaveformView)t.GetField("Waveform", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(w)!;
+        wave.ShowRecording(() => 0.3f);
+        Settle(wave);
+        Shot(w, dir, "0-main-recording");
+        wave.ShowIdle();
+        Settle(wave);
         Call("ShowSettings"); Shot(w, dir, "1-settings");
         Call("ShowDictionary", 0); Shot(w, dir, "2-dictionary");
         Call("ShowDictionary", 2); Shot(w, dir, "3-snippets");
@@ -48,7 +68,7 @@ public class UiRenderTests
         var o = new DictationOverlay();
         o.ShowRecording(() => 0.4f, "✨ E-Mail");
         o.SetLive("Hallo Herr Müller, vielen Dank für Ihre Nachricht, ich schicke Ihnen die Unterlagen bis Freitag");
-        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        Settle((WaveformView)typeof(DictationOverlay).GetField("level", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(o)!);
         o.CaptureRenderedFrame()?.Save(Path.Combine(dir, "9-overlay.png"));
         var tw = new TransformWindow("hey, schick mir mal bis morgen die zahlen, sonst wird das nix mit der präsi", () => true, () => Task.FromResult<string?>(null));
         tw.Show();

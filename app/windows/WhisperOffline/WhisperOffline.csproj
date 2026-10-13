@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>WhisperOffline</RootNamespace>
     <AssemblyName>WhisperOffline</AssemblyName>
-    <Version>3.0.0</Version>
+    <Version>3.2.0</Version>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
@@ -25,8 +25,9 @@
   <!-- CHANGELOG.md aus dem Repo-Root einbetten (In-App-Changelog, offline) -->
   <ItemGroup>
     <EmbeddedResource Include="..\..\..\CHANGELOG.md" Link="CHANGELOG.md" />
-    <!-- Anweisungen für das Sprachmodell, gemeinsam mit der Android-App -->
+    <!-- Anweisungen für das Sprachmodell und Standard-Wortliste, gemeinsam mit der Android-App -->
     <EmbeddedResource Include="..\..\shared\prompts.json" Link="prompts.json" />
+    <EmbeddedResource Include="..\..\shared\vocabulary.json" Link="vocabulary.json" />
   </ItemGroup>
 
 </Project>

@@ -3,11 +3,24 @@
         x:Class="WhisperOffline.MainWindow"
         Title="Scheisssewasser's Whisper"
         Width="760" Height="680"
+        xmlns:local="using:WhisperOffline"
         WindowStartupLocation="CenterScreen">
+
+    <Window.Styles>
+        <!-- Aufnahmeknopf wird während der Aufnahme rot -->
+        <Style Selector="Button.recording /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#DC2626" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.recording:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#B91C1C" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+    </Window.Styles>
 
     <Grid>
         <!-- Hauptansicht -->
-        <Grid x:Name="MainPanel" RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="16">
+        <Grid x:Name="MainPanel" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="16">
             <WrapPanel Grid.Row="0" Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
                 <TextBlock Text="Sprache:" VerticalAlignment="Center" />
                 <!-- "Automatisch" kostet einen kompletten zusätzlichen Encoder-Durchlauf -->
@@ -38,7 +51,10 @@
                         Click="OnFileClick" />
             </StackPanel>
 
-            <StackPanel Grid.Row="2" Margin="0,12,0,0" Spacing="6">
+            <!-- Wellenform: folgt dem Mikrofonpegel, ruhig beim Transkribieren -->
+            <local:WaveformView Grid.Row="2" x:Name="Waveform" Height="44" Margin="0,8,0,0" />
+
+            <StackPanel Grid.Row="3" Margin="0,4,0,0" Spacing="6">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="Diktat-Hotkey:" VerticalAlignment="Center" />
                     <Button x:Name="HotkeyButton" MinWidth="200" Click="OnHotkeyCapture"
@@ -68,11 +84,11 @@
                 <TextBlock x:Name="EngineLabel" Text="" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
             </StackPanel>
 
-            <TextBox Grid.Row="3" x:Name="TranscriptBox" Margin="0,12,0,0"
+            <TextBox Grid.Row="4" x:Name="TranscriptBox" Margin="0,12,0,0"
                      AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="False"
                      Watermark="Hier erscheint die Transkription…" />
 
-            <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0"
+            <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0"
                         HorizontalAlignment="Right">
                 <Button x:Name="TransformButton" Content="&#10024;  Umformen" Click="OnTransformTranscript"
                         ToolTip.Tip="Transkript mit dem Sprachmodell verbessern, kürzen, übersetzen …" />

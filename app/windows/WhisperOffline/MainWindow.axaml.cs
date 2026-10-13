@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        settings.SeedVocabulary();
         language = settings.Language;
         foreach (var item in LanguageBox.Items.OfType<ComboBoxItem>())
             if (item.Tag as string == language) LanguageBox.SelectedItem = item;
@@ -798,6 +799,8 @@ public partial class MainWindow : Window
                 return;
             }
             RecordButton.Content = "⏹  Aufnahme beenden";
+            RecordButton.Classes.Add("recording");
+            Waveform.ShowRecording(() => recorder.Level);
             StatusLabel.Text = "Aufnahme läuft…";
             if (settings.LiveTranscription && WhisperNative.Available)
             {
@@ -819,6 +822,8 @@ public partial class MainWindow : Window
         windowLive = null;
         if (live != null) TranscriptBox.Text = transcriptBeforeLive;
         RecordButton.Content = "🎙  Aufnahme starten";
+        RecordButton.Classes.Remove("recording");
+        Waveform.ShowWorking();
         StatusLabel.Text = $"Transkribiere {samples.Length / 16000f:F1} s Audio…";
         var result = await TranscribeWithProgress(samples, live);
         string? note = null;
@@ -837,6 +842,7 @@ public partial class MainWindow : Window
         }
         AppendTranscript(result, samples.Length / 16000f, "app");
         StatusLabel.Text = ResultStatus(result, samples.Length / 16000.0) + (note != null ? " " + note : "");
+        Waveform.ShowIdle();
         busy = false;
     }
 
@@ -882,6 +888,7 @@ public partial class MainWindow : Window
 
         busy = true;
         FileButton.IsEnabled = RecordButton.IsEnabled = false;
+        Waveform.ShowWorking();
         var name = Path.GetFileName(path);
         try
         {
@@ -916,7 +923,7 @@ public partial class MainWindow : Window
                 var lang = Lang;
                 string err = "";
                 var text = await Task.Run(() => Transcriber.Post(WhisperCli.Transcribe(path!, lang, out err,
-                    TextMatching.Prompt(settings.Vocabulary), settings.Translate), settings));
+                    TextMatching.Prompt(settings.Vocabulary, VocabularyDefaults.Lower), settings.Translate), settings));
                 HideWork();
                 AppendTranscript(text, 0, "file");
                 StatusLabel.Text = err.Length > 0 ? err : text.Trim().Length == 0 ? "Keine Sprache erkannt." : "Fertig.";
@@ -927,6 +934,7 @@ public partial class MainWindow : Window
             HideWork();
         }
         FileButton.IsEnabled = RecordButton.IsEnabled = true;
+        Waveform.ShowIdle();
         busy = false;
     }
 

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace WhisperOffline;
@@ -204,17 +205,48 @@ public static class TextMatching
         return text;
     }
 
-    /// Whisper-Prompt aus der Wortliste (höchstens ~800 Zeichen).
-    public static string Prompt(IEnumerable<string> words)
+    /// Whisper-Prompt aus der Wortliste (höchstens ~800 Zeichen). Eigene Wörter
+    /// stehen vor den Standard-Begriffen: Das begrenzte Budget gehört dem, was
+    /// der Nutzer selbst gepflegt hat. [defaults] = Kleinbuchstaben der
+    /// Standardliste (VocabularyDefaults.Lower), null = keine Umsortierung.
+    public static string Prompt(IEnumerable<string> words, HashSet<string>? defaults = null)
     {
+        var ordered = defaults == null ? words : words.OrderBy(w => defaults.Contains(w.ToLowerInvariant()));
         var sb = new StringBuilder();
-        foreach (var w in words)
+        foreach (var w in ordered)
         {
             if (sb.Length + w.Length + 2 > 800) break;
             if (sb.Length > 0) sb.Append(", ");
             sb.Append(w);
         }
         return sb.Length == 0 ? "" : sb.Append('.').ToString();
+    }
+}
+
+/// Mitgelieferte Standard-Wortliste (app/shared/vocabulary.json, eingebettet):
+/// häufige englische Fach- und Alltagbegriffe, wie sie im Deutschen üblich
+/// sind. Dient der Vorbelegung beim ersten Start und füllt den Whisper-Prompt
+/// hinter den eigenen Wörtern auf. Auf Android lädt Vocabulary.kt dieselbe Datei.
+public static class VocabularyDefaults
+{
+    public static readonly List<string> Words = Load();
+
+    /// Kleinbuchstaben der Standardliste — für die Prompt-Priorisierung.
+    public static HashSet<string> Lower { get; } = Words.Select(w => w.ToLowerInvariant()).ToHashSet();
+
+    private static List<string> Load()
+    {
+        try
+        {
+            var asm = typeof(VocabularyDefaults).Assembly;
+            var name = asm.GetManifestResourceNames().First(n => n.EndsWith("vocabulary.json"));
+            using var s = asm.GetManifestResourceStream(name)!;
+            return JsonNode.Parse(s)!["words"]!.AsArray()
+                .Select(n => (n?.GetValue<string>() ?? "").Trim())
+                .Where(w => w.Length > 0)
+                .ToList();
+        }
+        catch { return new List<string>(); }
     }
 }
 
@@ -312,7 +344,8 @@ public static class TextRules
 }
 
 /// Wie Enhance ein Diktat formatiert.
-public enum FormatMode { Auto, Standard, Email, Chat, Note, Document, Code, Todo, Subject, Raw }
+/// Bullets: Aufzählung, nur per gesprochener Anweisung („bitte als Liste“).
+public enum FormatMode { Auto, Standard, Email, Chat, Note, Document, Code, Todo, Subject, Raw, Bullets }
 
 public static class FormatModes
 {
@@ -329,6 +362,7 @@ public static class FormatModes
         FormatMode.Code => "Code",
         FormatMode.Todo => "Aufgabenliste",
         FormatMode.Subject => "Betreff",
+        FormatMode.Bullets => "Liste",
         _ => "Roh",
     };
 
@@ -564,5 +598,140 @@ public static class Stats
             .Select(g => (g.Key, g.Count())).OrderByDescending(x => x.Item2).ToList();
         return new Result(entries.Count, words, audio, entries.Count == 0 ? 0 : audio / entries.Count,
             Math.Max(0, typing - audio), perDay, langs);
+    }
+}
+
+/// Gesprochene Anweisungen an Enhance am Anfang oder Ende eines Diktats
+/// („…, bitte als Liste.“ / „Das Ganze bitte auf Englisch.“). Vorbild Whisper
+/// Bar; hier als feste Regel, weil kleine Modelle das nicht verlässlich
+/// befolgen. Nur am Rand und als eigener Satzteil. Gleiche Regeln wie
+/// SpokenDirectives.kt (Android).
+public static class SpokenDirectives
+{
+    public record Parsed(string Text, FormatMode? Mode = null, string? Language = null);
+
+    private static readonly (string Word, string Code)[] DeLangs =
+    {
+        ("englisch", "en"), ("deutsch", "de"), ("französisch", "fr"), ("spanisch", "es"),
+        ("italienisch", "it"), ("niederländisch", "nl"), ("holländisch", "nl"), ("polnisch", "pl"),
+        ("portugiesisch", "pt"), ("türkisch", "tr"), ("russisch", "ru"),
+    };
+    private static readonly (string Word, string Code)[] EnLangs =
+    {
+        ("english", "en"), ("german", "de"), ("french", "fr"), ("spanish", "es"), ("italian", "it"),
+        ("dutch", "nl"), ("polish", "pl"), ("portuguese", "pt"), ("turkish", "tr"), ("russian", "ru"),
+    };
+
+    private static readonly string DeLang = "(?:" + string.Join("|", DeLangs.Select(l => l.Word)) + ")(?:e|en)?";
+    private static readonly string EnLang = "(?:" + string.Join("|", EnLangs.Select(l => l.Word)) + ")";
+
+    private static readonly string LangCore =
+        @"(?:übrigens,?\s+)?(?:(?:das\s+ganze|alles)\s+)?(?:bitte\s+)?" +
+        @"(?:(?:auf|ins?)\s+" + DeLang + @"(?:\s+übersetzen)?|übersetze?n?\s+(?:(?:das|es|alles)\s+)?(?:ins?|auf)\s+" + DeLang + ")" +
+        @"(?:,?\s+bitte)?" +
+        @"|(?:please\s+)?(?:(?:translate|write)\s+(?:(?:this|it|everything|the\s+whole\s+thing|all\s+of\s+(?:this|it))\s+)?)?" +
+        @"(?:in|into)\s+" + EnLang + @"(?:,?\s+please)?";
+
+    /// Ohne eines dieser Wörter ist „auf Englisch“ Inhalt, keine Anweisung.
+    private static readonly Regex LangMarker = new(@"bitte|ganze|alles|übersetz|please|translate|write", RegexOptions.IgnoreCase);
+
+    private const string ListCore =
+        @"(?:bitte\s+|please\s+)?(?:als|as|in)\s+(?:a\s+|form\s+einer\s+)?" +
+        @"(?:to-?do-?liste|todo\s+liste|aufgabenliste|checkliste|liste|aufzählung|stichpunkten?" +
+        @"|(?:(?:to-?do|task|check|bullet(?:ed)?)\s*)?list|bullet\s+points)" +
+        @"(?:,?\s+(?:bitte|please))?";
+
+    private static readonly Regex TodoWords = new(@"to-?do|aufgabe|task|check", RegexOptions.IgnoreCase);
+
+    private static readonly Regex LangEnd = new(@"(^|[.,!?;:]\s*)(" + LangCore + @")\s*[.!]?\s*$", RegexOptions.IgnoreCase);
+    private static readonly Regex ListEnd = new(@"(^|[.,!?;:]\s*|\s+(?=(?:bitte|please)\s))(" + ListCore + @")\s*[.!]?\s*$", RegexOptions.IgnoreCase);
+    private static readonly Regex LangStart = new(@"^\s*(" + LangCore + @")\s*[:.,!;]\s*(?=\S)", RegexOptions.IgnoreCase);
+    private static readonly Regex ListStart = new(@"^\s*(" + ListCore + @")\s*[:.,!;]\s*(?=\S)", RegexOptions.IgnoreCase);
+
+    public static Parsed Parse(string text)
+    {
+        var t = text;
+        FormatMode? mode = null;
+        string? language = null;
+        for (int i = 0; i < 3; i++)
+        {
+            if (language == null && Strip(t, LangStart, LangEnd, true) is { } l)
+            {
+                language = LanguageOf(l.Directive); t = l.Remainder; continue;
+            }
+            if (mode == null && Strip(t, ListStart, ListEnd, false) is { } m)
+            {
+                mode = TodoWords.IsMatch(m.Directive) ? FormatMode.Todo : FormatMode.Bullets; t = m.Remainder; continue;
+            }
+            break;
+        }
+        return new Parsed(t, mode, language);
+    }
+
+    private static (string Remainder, string Directive)? Strip(string text, Regex start, Regex end, bool needsMarker)
+    {
+        var e = end.Match(text);
+        if (e.Success && (!needsMarker || LangMarker.IsMatch(e.Groups[2].Value)))
+        {
+            // Satzende vor der Anweisung bleibt stehen
+            var p = e.Groups[1].Value.Trim();
+            var keep = p is "." or "!" or "?" ? p : "";
+            var rest = (text[..e.Index].TrimEnd() + keep).TrimEnd(',', ';', ':', ' ', '\n');
+            if (!string.IsNullOrWhiteSpace(rest)) return (rest, e.Groups[2].Value);
+        }
+        var s = start.Match(text);
+        if (s.Success && (!needsMarker || LangMarker.IsMatch(s.Groups[1].Value)))
+        {
+            var rest = text[(s.Index + s.Length)..].Trim();
+            if (rest.Length > 0) return (char.ToUpper(rest[0]) + rest[1..], s.Groups[1].Value);
+        }
+        return null;
+    }
+
+    private static string? LanguageOf(string directive)
+    {
+        var lower = directive.ToLowerInvariant();
+        foreach (var (w, c) in DeLangs) if (lower.Contains(w)) return c;
+        foreach (var (w, c) in EnLangs) if (Regex.IsMatch(lower, @"\b" + w + @"\b")) return c;
+        return null;
+    }
+}
+
+/// Plausibilitätsprüfung für Antworten des Sprachmodells (wie Whisper Bar):
+/// Unbrauchbares wird verworfen, das Diktat dann ohne Enhance eingefügt.
+public static class EnhanceCheck
+{
+    /// Antworten eines Assistenten statt bearbeiteten Textes — die ersten aus
+    /// Whisper Bar, die übrigen typische Einleitungen kleiner Modelle.
+    private static readonly string[] AssistantPhrases =
+    {
+        "as an ai", "i'm sorry, but i", "i am sorry, but i", "i'm here to help", "prompt injection",
+        "als ki-assistent", "als sprachmodell", "ich kann nicht helfen", "ich kann dabei nicht helfen",
+        "ich bin ein sprachmodell", "ich bin ein assistent", "ich bin ein chatbot",
+        "here is the cleaned", "here is the rewritten", "here is the edited", "here's the cleaned",
+        "here's the rewritten", "hier ist der bereinigte", "hier ist der überarbeitete",
+        "hier ist die überarbeitete", "hier ist die bereinigte",
+    };
+
+    /// Grund der Ablehnung oder null. [transform]: Umformen darf deutlich
+    /// länger und kürzer werden als ein bereinigtes Diktat.
+    public static string? Reject(string input, string output, bool transform = false)
+    {
+        var o = output.Trim();
+        if (o.Length == 0) return "leeres Ergebnis";
+        var lo = o.ToLowerInvariant();
+        var li = input.ToLowerInvariant();
+        if (AssistantPhrases.Any(p => lo.Contains(p) && !li.Contains(p))) return "Antwort statt bearbeitetem Text";
+        int n = input.Trim().Length;
+        if (transform)
+        {
+            if (o.Length > n * 5 + 400) return "Ergebnis viel zu lang";
+        }
+        else
+        {
+            if (o.Length > n * 3 + 120) return "Ergebnis viel länger als das Diktat";
+            if (n >= 60 && o.Length < n / 4) return "Ergebnis viel kürzer als das Diktat";
+        }
+        return null;
     }
 }

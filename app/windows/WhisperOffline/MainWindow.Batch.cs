@@ -168,7 +168,7 @@ public partial class MainWindow
                     {
                         string err = "";
                         text = await Task.Run(() => Transcriber.Post(WhisperCli.Transcribe(it.Path, Lang, out err,
-                            TextMatching.Prompt(settings.Vocabulary), settings.Translate), settings), ct);
+                            TextMatching.Prompt(settings.Vocabulary, VocabularyDefaults.Lower), settings.Translate), settings), ct);
                         if (err.Length > 0 && text.Length == 0) throw new InvalidOperationException(err);
                     }
                     if (WhisperNative.WasCancelled)
