@@ -170,16 +170,25 @@ fun LiveWaveform(state: WaveState, level: Float, modifier: Modifier = Modifier) 
         animationSpec = spring(Spring.DampingRatioLowBouncy, Spring.StiffnessMediumLow),
         label = "waveAmp",
     )
-    val color by animateColorAsState(
+    // Feste Verlaufsfarben, 1:1 wie WaveformView.cs auf Windows
+    val c1 by animateColorAsState(
         when (state) {
-            WaveState.RECORDING -> MaterialTheme.colorScheme.error
-            WaveState.WORKING -> MaterialTheme.colorScheme.tertiary
+            WaveState.RECORDING -> Color(0xFFEC4899)
+            WaveState.WORKING -> Color(0xFF8B5CF6)
             WaveState.IDLE -> MaterialTheme.colorScheme.outlineVariant
         },
         animationSpec = tween(400),
-        label = "waveColor",
+        label = "waveC1",
     )
-    val accent = MaterialTheme.colorScheme.primary
+    val c2 by animateColorAsState(
+        when (state) {
+            WaveState.RECORDING -> Color(0xFFEF4444)
+            WaveState.WORKING -> Color(0xFF38BDF8)
+            WaveState.IDLE -> MaterialTheme.colorScheme.outlineVariant
+        },
+        animationSpec = tween(400),
+        label = "waveC2",
+    )
 
     val context = LocalContext.current
     val animate = remember {
@@ -205,7 +214,11 @@ fun LiveWaveform(state: WaveState, level: Float, modifier: Modifier = Modifier) 
         val mid = size.height / 2f
         val step = 3.dp.toPx()
         // (Deckkraft, Strichstärke, Frequenz)
-        val layers = listOf(Triple(1f, 3.dp.toPx(), 1f), Triple(0.55f, 2.dp.toPx(), 1.6f), Triple(0.3f, 1.5.dp.toPx(), 2.3f))
+        val layers = listOf(
+            Triple(1f, 2.8.dp.toPx(), 1f),
+            Triple(0.55f, 2.dp.toPx(), 1.6f),
+            Triple(0.28f, 1.4.dp.toPx(), 2.3f),
+        )
         layers.forEachIndexed { i, (alpha, stroke, freq) ->
             val path = Path()
             var x = 0f
@@ -221,7 +234,10 @@ fun LiveWaveform(state: WaveState, level: Float, modifier: Modifier = Modifier) 
             drawPath(
                 path,
                 brush = Brush.horizontalGradient(
-                    listOf(Color.Transparent, color.copy(alpha = alpha), accent.copy(alpha = alpha * color.alpha), Color.Transparent),
+                    0.0f to Color.Transparent,
+                    0.2f to c1.copy(alpha = alpha),
+                    0.8f to c2.copy(alpha = alpha),
+                    1.0f to Color.Transparent,
                 ),
                 style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
             )
@@ -313,6 +329,8 @@ fun TranscriptCard(
     live: Boolean = false,
     /// ✨ Umformen per Sprachmodell; null = kein Modell eingerichtet.
     onTransform: (() -> Unit)? = null,
+    /// Transkript leeren; null = Knopf ausblenden.
+    onClear: (() -> Unit)? = null,
 ) {
     var editing by rememberSaveable { mutableStateOf(false) }
     // Cursor ans Ende — man ergänzt meist etwas oder korrigiert den Schluss
@@ -341,6 +359,9 @@ fun TranscriptCard(
                         IconButton(onClick = { editing = true }) { Icon(Icons.Filled.Edit, contentDescription = "Bearbeiten") }
                         IconButton(onClick = onCopy) { Icon(Icons.Filled.ContentCopy, contentDescription = "Kopieren") }
                         IconButton(onClick = onShare) { Icon(Icons.Filled.Share, contentDescription = "Teilen") }
+                        onClear?.let { c ->
+                            IconButton(onClick = c) { Icon(Icons.Filled.Clear, contentDescription = "Leeren") }
+                        }
                     }
                     else -> Spacer(Modifier.height(48.dp))
                 }

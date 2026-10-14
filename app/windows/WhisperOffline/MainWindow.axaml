@@ -2,7 +2,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="WhisperOffline.MainWindow"
         Title="Scheisssewasser's Whisper"
-        Width="760" Height="680"
+        Width="860" Height="720"
+        MinWidth="560" MinHeight="560"
+        Background="{DynamicResource BrandSurfaceBrush}"
         xmlns:local="using:WhisperOffline"
         WindowStartupLocation="CenterScreen">
 
@@ -19,180 +21,227 @@
     </Window.Styles>
 
     <Grid>
-        <!-- Hauptansicht -->
-        <Grid x:Name="MainPanel" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="16">
-            <WrapPanel Grid.Row="0" Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
-                <TextBlock Text="Sprache:" VerticalAlignment="Center" />
-                <!-- "Automatisch" kostet einen kompletten zusätzlichen Encoder-Durchlauf -->
-                <ComboBox x:Name="LanguageBox" SelectedIndex="0" Width="170">
+        <!-- Hauptansicht (analog zur Android-Scaffold-Struktur) -->
+        <Grid x:Name="MainPanel" RowDefinitions="Auto,Auto,Auto,*" Margin="20,16">
+            <!-- TopAppBar: Titel links, Schnellnavigation rechts -->
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+                <StackPanel Grid.Column="0" Spacing="0" VerticalAlignment="Center">
+                    <TextBlock Text="Scheisssewasser's" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource BrandPrimaryBrush}" />
+                    <TextBlock Text="Whisper" FontSize="22" FontWeight="Bold" />
+                </StackPanel>
+                <WrapPanel Grid.Column="1" Orientation="Horizontal" ItemSpacing="6" LineSpacing="6" VerticalAlignment="Center">
+                    <Button x:Name="UpdateButton" Classes="chip" Content="&#11014;  Update" Click="OnCheckUpdate" IsVisible="False" />
+                    <Button Classes="chip" Content="&#128101;  Meeting" Click="OnOpenMeeting" />
+                    <Button Classes="chip" Content="&#128194;  Stapel" Click="OnOpenBatch" />
+                    <Button Classes="chip" Content="&#128218;  Verlauf" Click="OnOpenHistory" />
+                    <Button Classes="chip" Content="&#128214;  Wörterbuch" Click="OnOpenDictionary" />
+                    <Button Classes="chip" Content="&#128202;  Statistik" Click="OnOpenStats" />
+                    <Button Classes="chip" Content="&#9881;  Einstellungen" Click="OnOpenSettings" />
+                    <Button Classes="chip" Content="&#128220;" ToolTip.Tip="Changelog" Click="OnOpenChangelog" />
+                </WrapPanel>
+            </Grid>
+
+            <!-- Chip-Leiste: Modell, Sprache, Übersetzen & Hotkey -->
+            <WrapPanel Grid.Row="1" Orientation="Horizontal" ItemSpacing="8" LineSpacing="8" Margin="0,0,0,12">
+                <Button Classes="chip" Click="OnOpenModelPicker" ToolTip.Tip="Sprachmodell wählen oder herunterladen">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="&#9881;" VerticalAlignment="Center" />
+                        <TextBlock x:Name="ModelLabel" Text="Modell wählen…" VerticalAlignment="Center" FontWeight="Medium" />
+                        <TextBlock Text="&#9662;" VerticalAlignment="Center" Opacity="0.7" />
+                    </StackPanel>
+                </Button>
+
+                <ComboBox x:Name="LanguageBox" SelectedIndex="0" Width="175" CornerRadius="18">
                     <ComboBoxItem Content="Deutsch" Tag="de" />
                     <ComboBoxItem Content="English" Tag="en" />
                     <ComboBoxItem Content="Automatisch (2× so lang)" Tag="auto" />
                 </ComboBox>
-                <CheckBox x:Name="TranslateBox" Content="→ Englisch" Click="OnTranslateChanged"
+
+                <CheckBox x:Name="TranslateBox" Content="→ EN" Click="OnTranslateChanged"
+                          VerticalAlignment="Center" Margin="4,0"
                           ToolTip.Tip="Ins Englische übersetzen (nur Whisper-Modelle)" />
-                <Button Content="&#59256;  Modell" Click="OnOpenModelPicker" />
-                <Button Content="&#128218;  Verlauf" Click="OnOpenHistory" />
-                <Button Content="&#128101;  Meeting" Click="OnOpenMeeting" />
-                <Button Content="&#128194;  Stapel" Click="OnOpenBatch" />
-                <Button Content="&#128214;  Wörterbuch" Click="OnOpenDictionary" />
-                <Button Content="&#128202;  Statistik" Click="OnOpenStats" />
-                <Button Content="&#9881;  Einstellungen" Click="OnOpenSettings" />
-                <Button Content="&#128220;  Changelog" Click="OnOpenChangelog" />
-                <Button x:Name="UpdateButton" Content="&#11014;  Update" Click="OnCheckUpdate" IsVisible="False" />
-                <TextBlock x:Name="ModelLabel" Text="" VerticalAlignment="Center"
-                           Foreground="Gray" FontSize="12" TextWrapping="Wrap" />
+
+                <Border Background="{DynamicResource BrandCardBackgroundBrush}"
+                        BorderBrush="{DynamicResource BrandCardBorderBrush}"
+                        BorderThickness="1" CornerRadius="18" Padding="10,2">
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <TextBlock Text="Hotkey:" FontSize="12" Foreground="{DynamicResource BrandSubtleTextBrush}" VerticalAlignment="Center" />
+                        <Button x:Name="HotkeyButton" Padding="8,3" CornerRadius="12" Click="OnHotkeyCapture"
+                                ToolTip.Tip="Anklicken, dann die gewünschte Kombination drücken" />
+                    </StackPanel>
+                </Border>
             </WrapPanel>
 
-            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12" Margin="0,16,0,0">
-                <Button x:Name="RecordButton" Content="&#127908;  Aufnahme starten" MinWidth="170"
-                        Click="OnRecordClick" />
-                <Button x:Name="FileButton" Content="&#128196;  Datei transkribieren…" MinWidth="180"
-                        Click="OnFileClick" />
-            </StackPanel>
+            <!-- Aufnahme-Steuerung + Wellenform + Fortschrittskarte -->
+            <Border Grid.Row="2" Classes="card" Margin="0,0,0,12">
+                <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                            <Button x:Name="RecordButton" Classes="primaryAction" Content="&#127908;  Aufnahme starten"
+                                    MinWidth="195" Height="46" Click="OnRecordClick" />
+                            <Button x:Name="FileButton" Classes="chip" Content="&#128196;  Audiodatei transkribieren…"
+                                    Height="42" Click="OnFileClick" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                            <CheckBox x:Name="AutostartBox" Content="Autostart" Click="OnAutostartChanged"
+                                      ToolTip.Tip="Mit Windows im Infobereich starten" />
+                            <CheckBox x:Name="StartMinimizedBox" Content="Minimiert" Click="OnStartMinimizedChanged"
+                                      ToolTip.Tip="Beim Start direkt in den Infobereich minimieren" />
+                        </StackPanel>
+                    </Grid>
 
-            <!-- Wellenform: folgt dem Mikrofonpegel, ruhig beim Transkribieren -->
-            <local:WaveformView Grid.Row="2" x:Name="Waveform" Height="44" Margin="0,8,0,0" />
+                    <local:WaveformView x:Name="Waveform" Height="44" />
 
-            <StackPanel Grid.Row="3" Margin="0,4,0,0" Spacing="6">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="Diktat-Hotkey:" VerticalAlignment="Center" />
-                    <Button x:Name="HotkeyButton" MinWidth="200" Click="OnHotkeyCapture"
-                            ToolTip.Tip="Anklicken, dann die gewünschte Kombination drücken" />
-                    <TextBlock x:Name="HotkeyHint" VerticalAlignment="Center"
-                               FontSize="12" Foreground="Gray" TextWrapping="Wrap" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock x:Name="StatusLabel" Text="" FontWeight="Medium" TextWrapping="Wrap" />
+                            <TextBlock x:Name="HotkeyHint" FontSize="12" Foreground="{DynamicResource BrandSubtleTextBrush}" TextWrapping="Wrap" />
+                            <TextBlock x:Name="HotkeyMoreLabel" FontSize="12" Foreground="{DynamicResource BrandSubtleTextBrush}" TextWrapping="Wrap" IsVisible="False" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" x:Name="EngineLabel" Text="" FontSize="11"
+                                   Foreground="{DynamicResource BrandSubtleTextBrush}" VerticalAlignment="Bottom" />
+                    </Grid>
+
+                    <!-- Fortschritt der laufenden Transkription -->
+                    <Grid x:Name="WorkPanel" ColumnDefinitions="*,Auto,Auto" IsVisible="False" Margin="0,4,0,0">
+                        <ProgressBar x:Name="WorkProgress" Grid.Column="0" Minimum="0" Maximum="1"
+                                     Height="6" MinWidth="0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="WorkDetail" Grid.Column="1" Margin="12,0,0,0" FontSize="12"
+                                   Foreground="{DynamicResource BrandSubtleTextBrush}" VerticalAlignment="Center" />
+                        <Button x:Name="WorkCancelButton" Grid.Column="2" Content="Abbrechen"
+                                Margin="12,0,0,0" Click="OnWorkCancel" />
+                    </Grid>
                 </StackPanel>
-                <TextBlock x:Name="HotkeyMoreLabel" FontSize="12" Foreground="Gray" TextWrapping="Wrap" />
-                <StackPanel Orientation="Horizontal" Spacing="16">
-                    <CheckBox x:Name="AutostartBox" Content="Mit Windows starten"
-                              Click="OnAutostartChanged" />
-                    <CheckBox x:Name="StartMinimizedBox" Content="Minimiert starten"
-                              Click="OnStartMinimizedChanged" />
-                </StackPanel>
-                <TextBlock Text="Das Fenster schließen legt die App in den Infobereich. Der Hotkey wirkt überall."
-                           FontSize="12" Foreground="Gray" TextWrapping="Wrap" />
-                <TextBlock x:Name="StatusLabel" Text="" Foreground="Gray" TextWrapping="Wrap" />
-                <!-- Fortschritt der laufenden Transkription -->
-                <Grid x:Name="WorkPanel" ColumnDefinitions="*,Auto,Auto" IsVisible="False">
-                    <ProgressBar x:Name="WorkProgress" Grid.Column="0" Minimum="0" Maximum="1"
-                                 Height="6" MinWidth="0" VerticalAlignment="Center" />
-                    <TextBlock x:Name="WorkDetail" Grid.Column="1" Margin="12,0,0,0" FontSize="12"
-                               Foreground="Gray" VerticalAlignment="Center" />
-                    <Button x:Name="WorkCancelButton" Grid.Column="2" Content="Abbrechen"
-                            Margin="12,0,0,0" Click="OnWorkCancel" />
+            </Border>
+
+            <!-- TranscriptCard (analog zu TranscriptCard in Components.kt) -->
+            <Border Grid.Row="3" Classes="card">
+                <Grid RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="Transkript" FontSize="16" FontWeight="SemiBold" />
+                            <TextBlock Text="· Schließen legt die App in den Infobereich" FontSize="12"
+                                       Foreground="{DynamicResource BrandSubtleTextBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                            <Button x:Name="TransformButton" Classes="chip" Content="&#10024;  Umformen" Click="OnTransformTranscript"
+                                    ToolTip.Tip="Transkript mit dem Sprachmodell verbessern, kürzen, übersetzen …" />
+                            <Button Classes="chip" Content="&#128203;  Kopieren" Click="OnCopyClick" />
+                            <Button Classes="chip" Content="&#128279;  Teilen" Click="OnShareClick">
+                                <Button.Flyout>
+                                    <MenuFlyout>
+                                        <MenuItem Header="WhatsApp" Click="OnShareWhatsApp" />
+                                        <MenuItem Header="E-Mail" Click="OnShareMail" />
+                                        <MenuItem Header="In Zwischenablage kopieren" Click="OnCopyClick" />
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                            </Button>
+                            <Button Classes="chip" Content="Leeren" Click="OnClearClick" />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBox Grid.Row="1" x:Name="TranscriptBox"
+                             AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="False"
+                             BorderThickness="0" Background="Transparent" FontSize="14"
+                             Watermark="Aufnehmen, eine Audiodatei wählen oder per Hotkey überall diktieren…" />
                 </Grid>
-                <TextBlock x:Name="EngineLabel" Text="" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
-            </StackPanel>
-
-            <TextBox Grid.Row="4" x:Name="TranscriptBox" Margin="0,12,0,0"
-                     AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="False"
-                     Watermark="Hier erscheint die Transkription…" />
-
-            <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0"
-                        HorizontalAlignment="Right">
-                <Button x:Name="TransformButton" Content="&#10024;  Umformen" Click="OnTransformTranscript"
-                        ToolTip.Tip="Transkript mit dem Sprachmodell verbessern, kürzen, übersetzen …" />
-                <Button Content="&#128279;  Teilen" Click="OnShareClick">
-                    <Button.Flyout>
-                        <MenuFlyout>
-                            <MenuItem Header="WhatsApp" Click="OnShareWhatsApp" />
-                            <MenuItem Header="E-Mail" Click="OnShareMail" />
-                            <MenuItem Header="In Zwischenablage kopieren" Click="OnCopyClick" />
-                        </MenuFlyout>
-                    </Button.Flyout>
-                </Button>
-                <Button Content="Kopieren" Click="OnCopyClick" />
-                <Button Content="Leeren" Click="OnClearClick" />
-            </StackPanel>
+            </Border>
         </Grid>
 
         <!-- Einführung beim ersten Start -->
-        <Border x:Name="OnboardingPanel" IsVisible="False" Background="{DynamicResource SystemRegionBrush}">
-            <Grid RowDefinitions="Auto,*,Auto" Margin="32">
+        <Border x:Name="OnboardingPanel" IsVisible="False" Background="{DynamicResource BrandSurfaceBrush}">
+            <Grid RowDefinitions="Auto,*,Auto" Margin="32" MaxWidth="640" HorizontalAlignment="Center">
                 <StackPanel Grid.Row="0" Spacing="6" Margin="0,0,0,16">
                     <TextBlock Text="Scheisssewasser's Whisper" FontSize="26" FontWeight="Bold" />
                     <TextBlock x:Name="OnboardingPageIndicator" Text="Seite 1 von 4"
-                               Foreground="Gray" FontSize="13" />
+                               Foreground="{DynamicResource BrandSubtleTextBrush}" FontSize="13" />
                 </StackPanel>
-                <Border Grid.Row="1" BorderBrush="LightGray" BorderThickness="1"
-                        CornerRadius="8" Padding="20">
+                <Border Grid.Row="1" Classes="card" Padding="24">
                     <ScrollViewer>
-                        <StackPanel Spacing="10">
+                        <StackPanel Spacing="12">
                             <TextBlock x:Name="OnboardingTitle" Text="" FontSize="20" FontWeight="Bold" />
-                            <TextBlock x:Name="OnboardingIntro" TextWrapping="Wrap" IsVisible="False" />
+                            <TextBlock x:Name="OnboardingIntro" TextWrapping="Wrap" IsVisible="False" FontSize="14" />
                             <StackPanel x:Name="OnboardingBullets" Spacing="8" />
                             <TextBlock x:Name="OnboardingFooter" TextWrapping="Wrap" IsVisible="False"
-                                       Foreground="Gray" FontSize="12" />
+                                       Foreground="{DynamicResource BrandSubtleTextBrush}" FontSize="12" />
                         </StackPanel>
                     </ScrollViewer>
                 </Border>
-                <Button x:Name="OnboardingNextButton" Grid.Row="2" Content="Weiter"
+                <Button x:Name="OnboardingNextButton" Grid.Row="2" Classes="primaryAction" Content="Weiter"
                         Click="OnOnboardingNext" MinWidth="220" Height="44"
                         HorizontalAlignment="Center" Margin="0,16,0,0" />
             </Grid>
         </Border>
 
         <!-- Changelog -->
-        <Border x:Name="ChangelogPanel" IsVisible="False" Background="{DynamicResource SystemRegionBrush}">
-            <Grid RowDefinitions="Auto,*" Margin="24">
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
+        <Border x:Name="ChangelogPanel" IsVisible="False" Background="{DynamicResource BrandSurfaceBrush}">
+            <Grid RowDefinitions="Auto,*" Margin="24" MaxWidth="760" HorizontalAlignment="Stretch">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                     <TextBlock Text="Changelog" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
-                    <Button Content="Schließen" Click="OnChangelogClose" />
-                </StackPanel>
-                <ScrollViewer Grid.Row="1">
-                    <TextBlock x:Name="ChangelogText" TextWrapping="Wrap" />
-                </ScrollViewer>
+                    <Button Grid.Column="1" Classes="chip" Content="&#10005;  Schließen" Click="OnChangelogClose" />
+                </Grid>
+                <Border Grid.Row="1" Classes="card">
+                    <ScrollViewer>
+                        <TextBlock x:Name="ChangelogText" TextWrapping="Wrap" />
+                    </ScrollViewer>
+                </Border>
             </Grid>
         </Border>
 
         <!-- Update mit Release-Notes -->
-        <Border x:Name="UpdatePanel" IsVisible="False" Background="{DynamicResource SystemRegionBrush}">
-            <Grid RowDefinitions="Auto,*,Auto" Margin="24">
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
+        <Border x:Name="UpdatePanel" IsVisible="False" Background="{DynamicResource BrandSurfaceBrush}">
+            <Grid RowDefinitions="Auto,*,Auto" Margin="24" MaxWidth="760" HorizontalAlignment="Stretch">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                     <TextBlock x:Name="UpdateTitle" Text="Update" FontSize="22"
                                FontWeight="Bold" VerticalAlignment="Center" />
-                    <Button Content="Abbrechen" Click="OnUpdateCancel" />
-                </StackPanel>
-                <ScrollViewer Grid.Row="1">
-                    <TextBlock x:Name="UpdateNotes" TextWrapping="Wrap" />
-                </ScrollViewer>
-                <Button x:Name="UpdateInstallButton" Grid.Row="2" Content="Herunterladen &amp; installieren"
+                    <Button Grid.Column="1" Classes="chip" Content="Abbrechen" Click="OnUpdateCancel" />
+                </Grid>
+                <Border Grid.Row="1" Classes="card">
+                    <ScrollViewer>
+                        <TextBlock x:Name="UpdateNotes" TextWrapping="Wrap" />
+                    </ScrollViewer>
+                </Border>
+                <Button x:Name="UpdateInstallButton" Grid.Row="2" Classes="primaryAction"
+                        Content="Herunterladen &amp; installieren"
                         Click="OnUpdateInstall" Margin="0,12,0,0" HorizontalAlignment="Left" />
             </Grid>
         </Border>
 
-        <!-- Neue Bereiche (Einstellungen, Wörterbuch, Statistik, Meeting, Stapel …),
-             im Code aufgebaut — siehe MainWindow.Panels.cs -->
-        <Border x:Name="PanelHost" IsVisible="False" Background="{DynamicResource SystemRegionBrush}">
-            <Grid RowDefinitions="Auto,*" Margin="24,20,24,16">
+        <!-- Overlay-Scaffold (Einstellungen, Wörterbuch, Statistik, Meeting, Stapel …) -->
+        <Border x:Name="PanelHost" IsVisible="False" Background="{DynamicResource BrandSurfaceBrush}">
+            <Grid RowDefinitions="Auto,*" Margin="24,20,24,16" MaxWidth="780" HorizontalAlignment="Stretch">
                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                     <StackPanel Grid.Column="0" Spacing="2">
                         <TextBlock x:Name="PanelTitle" FontSize="22" FontWeight="Bold" />
-                        <TextBlock x:Name="PanelSubtitle" FontSize="12" Foreground="Gray" TextWrapping="Wrap" />
+                        <TextBlock x:Name="PanelSubtitle" FontSize="12"
+                                   Foreground="{DynamicResource BrandSubtleTextBrush}" TextWrapping="Wrap" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
                         <StackPanel x:Name="PanelActions" Orientation="Horizontal" Spacing="8" />
-                        <Button Content="Schließen" Click="OnPanelClose" />
+                        <Button Classes="chip" Content="&#10005;  Schließen" Click="OnPanelClose" />
                     </StackPanel>
                 </Grid>
                 <ContentControl Grid.Row="1" x:Name="PanelContent" />
             </Grid>
         </Border>
 
-        <!-- Modell-Auswahl (erster Start / Wechsel) -->
-        <Border x:Name="PickerPanel" IsVisible="False" Background="{DynamicResource SystemRegionBrush}">
-            <Grid RowDefinitions="Auto,*,Auto" Margin="24">
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
-                    <TextBlock Text="Modell wählen" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
-                    <TextBlock Text="Modelle werden einmalig von einem Server von scheisssewasser.xyz bezogen und heruntergeladen" VerticalAlignment="Center"
-                               Foreground="Gray" />
-                    <Button x:Name="PickerCloseButton" Content="Schließen" HorizontalAlignment="Right"
-                            Click="OnClosePicker" />
-                </StackPanel>
+        <!-- Modell-Auswahl -->
+        <Border x:Name="PickerPanel" IsVisible="False" Background="{DynamicResource BrandSurfaceBrush}">
+            <Grid RowDefinitions="Auto,*,Auto" Margin="24" MaxWidth="780" HorizontalAlignment="Stretch">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock Text="Modell wählen" FontSize="22" FontWeight="Bold" />
+                        <TextBlock Text="Einmaliger Download von scheisssewasser.xyz — danach komplett offline"
+                                   FontSize="12" Foreground="{DynamicResource BrandSubtleTextBrush}" />
+                    </StackPanel>
+                    <Button Grid.Column="1" x:Name="PickerCloseButton" Classes="chip" Content="&#10005;  Schließen"
+                            VerticalAlignment="Top" Click="OnClosePicker" />
+                </Grid>
                 <ScrollViewer Grid.Row="1">
                     <StackPanel x:Name="PickerList" Spacing="12" />
                 </ScrollViewer>
-                <TextBlock Grid.Row="2" x:Name="PickerError" Text="" Foreground="Red"
+                <TextBlock Grid.Row="2" x:Name="PickerError" Text="" Foreground="#DC2626"
                            TextWrapping="Wrap" Margin="0,12,0,0" />
             </Grid>
         </Border>

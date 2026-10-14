@@ -857,6 +857,7 @@ fun App(
                         transcript = edited
                     },
                     onTransform = if (LlmManager.isConfigured(context) && !busy) ({ showTransform = true }) else null,
+                    onClear = if (!busy) ({ transcript = "" }) else null,
                     modifier = modifier,
                 )
 

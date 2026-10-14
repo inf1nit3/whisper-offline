@@ -68,10 +68,10 @@ public partial class MainWindow
         return new StackPanel { Spacing = 0, Children = { box, Hint(hint).With(h => h.Margin = new Thickness(28, 0, 0, 4)) } };
     }
 
+    // Farben aus App.axaml (Border.card) — folgen Hell/Dunkel
     private static Border Card(Control child) => new()
     {
-        BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
-        Padding = new Thickness(12), Child = child,
+        Classes = { "card" }, Padding = new Thickness(12), Child = child,
     };
 
     private static ScrollViewer Scroll(Control c) => new() { Content = c, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
@@ -515,7 +515,7 @@ public partial class MainWindow
             var bar = new Rectangle
             {
                 Width = Math.Max(4, 600.0 / st.PerDay.Count - 3), Height = Math.Max(2, 130.0 * words / max),
-                Fill = words > 0 ? Brushes.SteelBlue : Brushes.Gainsboro, VerticalAlignment = VerticalAlignment.Bottom,
+                Fill = words > 0 ? Brushes.SteelBlue : new SolidColorBrush(Color.FromArgb(0x40, 0x80, 0x80, 0x80)), VerticalAlignment = VerticalAlignment.Bottom,
                 RadiusX = 2, RadiusY = 2,
             };
             ToolTip.SetTip(bar, $"{label}: {words} Wörter");

@@ -11,9 +11,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-// Markenfarben für Geräte vor Android 12 (dort gibt es kein Material You):
-// ruhiges Navy als Grundton, Grün als Akzent für „offline / privat“.
-private val LightColors = lightColorScheme(
+// Gemeinsame Markenfarben (identisch mit App.axaml auf Windows), auf Geräten
+// vor Android 12 (dort gibt es kein Material You): ruhiges Navy als Grundton,
+// Grün als Akzent für „offline / privat“.
+val BrandLightColors = lightColorScheme(
     primary = Color(0xFF2D5A88),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFD3E4FF),
@@ -26,6 +27,10 @@ private val LightColors = lightColorScheme(
     onTertiary = Color(0xFFFFFFFF),
     tertiaryContainer = Color(0xFFA6F2C5),
     onTertiaryContainer = Color(0xFF002111),
+    error = Color(0xFFDC2626),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFFEE2E2),
+    onErrorContainer = Color(0xFF7F1D1D),
     background = Color(0xFFF8F9FF),
     onBackground = Color(0xFF191C20),
     surface = Color(0xFFF8F9FF),
@@ -41,7 +46,7 @@ private val LightColors = lightColorScheme(
     surfaceContainerHighest = Color(0xFFE1E2E8),
 )
 
-private val DarkColors = darkColorScheme(
+val BrandDarkColors = darkColorScheme(
     primary = Color(0xFFA1C9FF),
     onPrimary = Color(0xFF00315B),
     primaryContainer = Color(0xFF0F4880),
@@ -54,6 +59,10 @@ private val DarkColors = darkColorScheme(
     onTertiary = Color(0xFF00391F),
     tertiaryContainer = Color(0xFF005231),
     onTertiaryContainer = Color(0xFFA6F2C5),
+    error = Color(0xFFEF4444),
+    onError = Color(0xFF450A0A),
+    errorContainer = Color(0xFF7F1D1D),
+    onErrorContainer = Color(0xFFFECACA),
     background = Color(0xFF111418),
     onBackground = Color(0xFFE1E2E8),
     surface = Color(0xFF111418),
@@ -78,8 +87,8 @@ fun WhisperTheme(content: @Composable () -> Unit) {
     val colors = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        dark -> DarkColors
-        else -> LightColors
+        dark -> BrandDarkColors
+        else -> BrandLightColors
     }
     MaterialTheme(colorScheme = colors, content = content)
 }

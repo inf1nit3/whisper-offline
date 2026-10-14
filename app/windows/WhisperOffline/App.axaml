@@ -1,8 +1,82 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="WhisperOffline.App"
-             RequestedThemeVariant="Light">
+             RequestedThemeVariant="Default">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <!-- Markenfarben analog zu Theme.kt (Android) -->
+                <ResourceDictionary x:Key="Light">
+                    <Color x:Key="BrandPrimaryColor">#2D5A88</Color>
+                    <Color x:Key="BrandPrimaryContainerColor">#D3E4FF</Color>
+                    <Color x:Key="BrandTertiaryColor">#1F7A4D</Color>
+                    <Color x:Key="BrandErrorColor">#DC2626</Color>
+                    <Color x:Key="BrandSurfaceColor">#F8F9FF</Color>
+                    <Color x:Key="BrandCardBackgroundColor">#FFFFFF</Color>
+                    <Color x:Key="BrandCardBorderColor">#DFE2EB</Color>
+                    <Color x:Key="BrandSubtleTextColor">#535F70</Color>
+
+                    <SolidColorBrush x:Key="BrandPrimaryBrush" Color="{StaticResource BrandPrimaryColor}" />
+                    <SolidColorBrush x:Key="BrandPrimaryContainerBrush" Color="{StaticResource BrandPrimaryContainerColor}" />
+                    <SolidColorBrush x:Key="BrandTertiaryBrush" Color="{StaticResource BrandTertiaryColor}" />
+                    <SolidColorBrush x:Key="BrandErrorBrush" Color="{StaticResource BrandErrorColor}" />
+                    <SolidColorBrush x:Key="BrandSurfaceBrush" Color="{StaticResource BrandSurfaceColor}" />
+                    <SolidColorBrush x:Key="BrandCardBackgroundBrush" Color="{StaticResource BrandCardBackgroundColor}" />
+                    <SolidColorBrush x:Key="BrandCardBorderBrush" Color="{StaticResource BrandCardBorderColor}" />
+                    <SolidColorBrush x:Key="BrandSubtleTextBrush" Color="{StaticResource BrandSubtleTextColor}" />
+                </ResourceDictionary>
+
+                <ResourceDictionary x:Key="Dark">
+                    <Color x:Key="BrandPrimaryColor">#A1C9FF</Color>
+                    <Color x:Key="BrandPrimaryContainerColor">#0F4880</Color>
+                    <Color x:Key="BrandTertiaryColor">#8BD6A9</Color>
+                    <Color x:Key="BrandErrorColor">#EF4444</Color>
+                    <Color x:Key="BrandSurfaceColor">#111418</Color>
+                    <Color x:Key="BrandCardBackgroundColor">#1D2024</Color>
+                    <Color x:Key="BrandCardBorderColor">#32353A</Color>
+                    <Color x:Key="BrandSubtleTextColor">#9CA3AF</Color>
+
+                    <SolidColorBrush x:Key="BrandPrimaryBrush" Color="{StaticResource BrandPrimaryColor}" />
+                    <SolidColorBrush x:Key="BrandPrimaryContainerBrush" Color="{StaticResource BrandPrimaryContainerColor}" />
+                    <SolidColorBrush x:Key="BrandTertiaryBrush" Color="{StaticResource BrandTertiaryColor}" />
+                    <SolidColorBrush x:Key="BrandErrorBrush" Color="{StaticResource BrandErrorColor}" />
+                    <SolidColorBrush x:Key="BrandSurfaceBrush" Color="{StaticResource BrandSurfaceColor}" />
+                    <SolidColorBrush x:Key="BrandCardBackgroundBrush" Color="{StaticResource BrandCardBackgroundColor}" />
+                    <SolidColorBrush x:Key="BrandCardBorderBrush" Color="{StaticResource BrandCardBorderColor}" />
+                    <SolidColorBrush x:Key="BrandSubtleTextBrush" Color="{StaticResource BrandSubtleTextColor}" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme />
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource BrandCardBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrandCardBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+        <Style Selector="Button.chip">
+            <Setter Property="CornerRadius" Value="18" />
+            <Setter Property="Padding" Value="12,6" />
+        </Style>
+        <Style Selector="Button.primaryAction">
+            <Setter Property="Background" Value="#2D5A88" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="CornerRadius" Value="24" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="20,10" />
+        </Style>
+        <!-- Fluent färbt Hover/Gedrückt sonst hellgrau mit schwarzer Schrift -->
+        <Style Selector="Button.primaryAction:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#24496F" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.primaryAction:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#1D3B5A" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
     </Application.Styles>
 </Application>

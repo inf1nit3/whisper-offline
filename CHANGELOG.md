@@ -1,5 +1,25 @@
 # Changelog
 
+## v3.3
+
+Neues Design — Windows und Android sehen jetzt gleich aus.
+
+**Windows: neues Hauptfenster**
+- Kopfzeile mit Titel und Schnellzugriff (Meeting, Stapel, Verlauf,
+  Wörterbuch, Statistik, Einstellungen, Changelog)
+- Modell, Sprache, „→ EN“ und Hotkey als Chip-Leiste; der Modell-Chip zeigt
+  einen lesbaren Namen („Whisper small“) und öffnet die Modellauswahl
+- Aufnahme, Wellenform und Fortschritt in einer Karte, das Transkript in einer
+  eigenen Karte mit Umformen, Kopieren, Teilen und Leeren
+- Dunkles Design: folgt jetzt der Windows-Einstellung (Hell/Dunkel)
+- Markenfarben wie auf Android; Einstellungen, Modellauswahl, Changelog und
+  Update im selben Karten-Stil
+
+**Android**
+- Transkript leeren direkt in der Transkript-Karte
+- Wellenform mit denselben Verlaufsfarben wie unter Windows
+- Markenfarben (Geräte vor Android 12) mit passenden Fehlerfarben
+
 ## v3.2
 
 **Anweisungen einfach mitsprechen**

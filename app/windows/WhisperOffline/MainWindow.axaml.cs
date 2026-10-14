@@ -359,7 +359,25 @@ public partial class MainWindow : Window
     }
 
     private void UpdateModelLabel() =>
-        ModelLabel.Text = Path.GetFileName(WhisperCli.SelectedModel) + " bereit";
+        ModelLabel.Text = ModelDisplayName(Path.GetFileName(WhisperCli.SelectedModel));
+
+    /// Lesbarer Modellname für den Modell-Chip — wie modelDisplayName auf Android
+    /// ("ggml-small-q5_1.bin" → "Whisper small", "ggml-parakeet-tdt-0.6b-v3-…" → "Parakeet v3").
+    private string ModelDisplayName(string file)
+    {
+        if (string.IsNullOrEmpty(file)) return "Modell wählen…";
+        var label = manifest?.FirstOrDefault(m => m.File == file)?.Label;
+        if (label != null) return label.Split(" — ")[0];
+        var name = Path.GetFileNameWithoutExtension(file);
+        if (name.StartsWith("ggml-")) name = name[5..];
+        if (name.StartsWith("parakeet"))
+        {
+            var version = System.Text.RegularExpressions.Regex.Match(name, @"-(v\d+)");
+            return version.Success ? "Parakeet " + version.Groups[1].Value : "Parakeet";
+        }
+        // Quantisierung (q5_1, q8_0 …) ist für die Anzeige Rauschen
+        return "Whisper " + System.Text.RegularExpressions.Regex.Replace(name, @"-q\d+_\d+$", "");
+    }
 
     private string Lang => language == "auto" ? "" : language;
 
@@ -404,9 +422,7 @@ public partial class MainWindow : Window
 
             var border = new Border
             {
-                BorderBrush = Brushes.LightGray,
-                BorderThickness = new Avalonia.Thickness(1),
-                CornerRadius = new Avalonia.CornerRadius(6),
+                Classes = { "card" },
                 Padding = new Avalonia.Thickness(14),
                 Child = BuildModelCard(info, isLocal, isCurrent),
             };
