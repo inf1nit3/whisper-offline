@@ -23,6 +23,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -171,6 +174,8 @@ fun SettingsOverlay(
                 notesAuto) { notesAuto = it; Settings.setMeetingNotesAuto(context, it) }
             NavRow("Sprechererkennung", "Zusatzmodelle für die Sprechertrennung laden", Icons.Filled.RecordVoiceOver, onOpenMeetingModels)
 
+            JevSettingsSection()
+
             SectionTitle("Verlauf")
             SwitchRow("Verlauf speichern",
                 "Aus: Transkripte werden nirgends gespeichert. Statistiken gibt es dann auch keine.", history) {
@@ -206,6 +211,130 @@ private fun MicrophoneRow() {
             }
         }
     }
+}
+
+/// Smart Routing: Schalter, API-Key (maskiert), Verbindungstest, Modell, Projekt-Tags.
+/// Ohne Key bleibt der Schalter gesperrt — die App funktioniert dann wie bisher offline.
+@Composable
+private fun JevSettingsSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var enabled by remember { mutableStateOf(Settings.jevEnabled(context)) }
+    var key by remember { mutableStateOf(Settings.jevApiKey(context)) }
+    var model by remember { mutableStateOf(Settings.jevModel(context)) }
+    var tagCount by remember { mutableIntStateOf(Settings.jevProjectTags(context).size) }
+    var showTags by remember { mutableStateOf(false) }
+    var testing by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+
+    if (showTags) ProjectTagsDialog(onDismiss = {
+        showTags = false
+        tagCount = Settings.jevProjectTags(context).size
+    })
+
+    SectionTitle("Smart Routing (TypeSafe Jev.ai)")
+    SwitchRow("Jev Post-Processing aktivieren",
+        "Ordnet Aufnahmen nach Kategorie, Projekt und Dringlichkeit ein und lässt „Enhance“ nur laufen, wenn der Text es braucht. " +
+            "Sendet den Transkripttext an api.typesafe.ai; ohne Internet oder Key bleibt alles wie gehabt.",
+        enabled, enabled = key.isNotBlank()) {
+        enabled = it; Settings.setJevEnabled(context, it)
+    }
+    OutlinedTextField(
+        value = key,
+        onValueChange = {
+            key = it.trim()
+            Settings.setJevApiKey(context, key)
+            testResult = null
+            if (key.isBlank()) { enabled = false; Settings.setJevEnabled(context, false) }
+        },
+        label = { Text("TypeSafe API Key") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        FilledTonalButton(
+            enabled = key.isNotBlank() && !testing,
+            onClick = {
+                testing = true
+                testResult = null
+                scope.launch {
+                    testResult = when (val r = Jev.testConnection(key, model)) {
+                        is JevClient.Result.Success -> "Verbindung steht" to true
+                        is JevClient.Result.Failure -> r.message to false
+                    }
+                    testing = false
+                }
+            },
+        ) { Text(if (testing) "Teste …" else "Verbindung testen") }
+        testResult?.let { (message, ok) ->
+            Text(message, Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodySmall,
+                color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+        }
+    }
+    OutlinedTextField(
+        value = model,
+        onValueChange = { model = it; Settings.setJevModel(context, it) },
+        label = { Text("Modell") },
+        supportingText = { Text("Gepinnt, damit sich Schwellenwerte bei Modell-Updates nicht verschieben. Standard: ${JevQuestions.DEFAULT_MODEL}") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+    NavRow("Projekt-Tags", "$tagCount Tags — Jev ordnet Aufnahmen diesen Projekten zu", Icons.Filled.Folder) { showTags = true }
+}
+
+/// Eigene Projekte (Schlüssel + kurze Beschreibung); sie landen als Kriterien
+/// von `project_context` in jeder Anfrage. „unassigned“ ergänzt die App selbst.
+@Composable
+private fun ProjectTagsDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var tags by remember { mutableStateOf(Settings.jevProjectTags(context)) }
+    var key by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    val canAdd = key.isNotBlank() && key.trim() != JevDecision.PROJECT_UNASSIGNED && tags.size < JevDecision.MAX_TAGS
+
+    fun add() {
+        if (!canAdd) return
+        tags = JevDecision.sanitizeTags(tags.filterNot { it.key == key.trim() } + JevProjectTag(key, description))
+        key = ""; description = ""
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Projekt-Tags") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Schlüssel (z. B. whisper_app) und eine kurze Beschreibung, woran Jev das Projekt erkennt.",
+                    style = MaterialTheme.typography.bodySmall)
+                tags.forEach { t ->
+                    ListItem(
+                        headlineContent = { Text(t.key) },
+                        supportingContent = { Text(t.description, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                        trailingContent = {
+                            IconButton(onClick = { tags = tags - t }) {
+                                Icon(Icons.Outlined.Delete, contentDescription = "Tag entfernen", tint = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                    )
+                }
+                OutlinedTextField(key, { key = it }, label = { Text("Schlüssel") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(description, { description = it }, label = { Text("Beschreibung") },
+                    minLines = 2, modifier = Modifier.fillMaxWidth())
+                TextButton(onClick = { add() }, enabled = canAdd) { Text("Tag hinzufügen") }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { Settings.setJevProjectTags(context, tags); onDismiss() }) { Text("Speichern") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { tags = JevQuestions.DEFAULT_TAGS }) { Text("Standard") }
+                TextButton(onClick = onDismiss) { Text("Abbrechen") }
+            }
+        },
+    )
 }
 
 @Composable

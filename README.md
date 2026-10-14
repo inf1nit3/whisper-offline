@@ -456,6 +456,37 @@ Was regelbasiert verlässlicher ist, läuft vor bzw. nach dem Modell: Sprachbefe
 Füllwörter, Satzanfänge, die eigene Wortliste. Die Modelle stehen im Manifest unter
 `llm` (siehe `server/README-server.md`).
 
+## Smart Routing (TypeSafe Jev, nur Android, optional)
+
+**Ausnahme vom Offline-Prinzip:** Ist Smart Routing eingeschaltet, geht der Text einer
+Aufnahme oder Datei (nicht das Audio) an `https://api.typesafe.ai/v1/systemone`. Standard
+ist aus; ohne API-Key lässt sich der Schalter nicht aktivieren. Der Key liegt im privaten
+App-Speicher (`settings`-Prefs) und wird nicht geloggt.
+
+[Jev](https://typesafe.ai) ist kein generatives Modell, sondern ein Entscheidungsmodell:
+eine Anfrage beantwortet fünf typisierte Fragen parallel (`Jev.kt`):
+
+| Frage | Typ | Verwendung |
+|---|---|---|
+| `intent` | choice | Kategorie (Aufgabe, Code/Bug, Termin, Nachricht, Notiz, Befehl, Rauschen) |
+| `project_context` | choice | Projekt; Kriterien kommen aus den eigenen Projekt-Tags |
+| `urgency` | score (0–3) | Prio-Badge |
+| `needs_text_cleanup` | noul | ab 0,70: „Text glätten“; steuert auch Auto-Enhance |
+| `is_actionable` | noul | gespeichert (ab 0,70 ja, bis 0,30 nein) |
+
+Entscheidungslogik (`JevDecision`, getestet in `JevDecisionTest`):
+
+- Intent-Sicherheit ≥ 0,80: automatisch gesetzt. 0,50–0,80: gesetzt, dazu ein Chip mit der
+  zweitwahrscheinlichsten Kategorie zum Umschalten. < 0,50: `general_note`, keine weitere Aktion.
+- Projekt nur ab 0,80 und nie „unassigned“; Dringlichkeit ab 0,50.
+- Rauschen (`noise_or_empty` ab 0,85 und Aufnahme < 3 s): nicht im Verlauf gespeichert.
+- Offline, kein Key, Fehler oder mehr als 1,5 s: Rohtranskript, alles wie ohne Jev.
+  Bei HTTP 429/529 gibt es einen kurzen Retry innerhalb dieses Zeitbudgets.
+- Das Modell ist gepinnt (`jev-1.13.0`, einstellbar), damit kalibrierte Schwellenwerte bei
+  Updates nicht driften. Wörter und Dauer rechnet die App vor — Jev kann nicht zählen.
+- Klassifiziert werden Aufnahmen in der App und Einzeldateien, nicht Tastatur, Diktat-Overlay
+  oder Meeting.
+
 ## Meeting-Modus
 
 Aufnahme direkt in WAV-Dateien (stundenlang ohne Speicherproblem), danach

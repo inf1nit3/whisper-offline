@@ -32,7 +32,15 @@ object TranscriptionJobs {
     )
 
     /// Abgeschlossener Auftrag, bis die Oberfläche ihn abholt.
-    data class Outcome(val text: String?, val message: String?, val isError: Boolean)
+    /// [analysis]: Jev-Klassifikation des Textes (null = keine). [keepAnalysis]:
+    /// Umformen ändert nur den Text; die Klassifikation des Originals bleibt stehen.
+    data class Outcome(
+        val text: String?,
+        val message: String?,
+        val isError: Boolean,
+        val analysis: JevAnalysis? = null,
+        val keepAnalysis: Boolean = false,
+    )
 
     /// Was für die Zeitschätzung und den Verlauf gebraucht wird.
     data class Setup(
@@ -135,7 +143,7 @@ object TranscriptionJobs {
             val o = work(app)
             when {
                 o.cancelled -> Outcome(null, "Abgebrochen", isError = false)
-                o.text != null -> Outcome(o.text, null, isError = false)
+                o.text != null -> Outcome(o.text, null, isError = false, keepAnalysis = true)
                 else -> Outcome(null, o.error ?: "Sprachmodell fehlgeschlagen", isError = true)
             }
         }
@@ -222,24 +230,46 @@ object TranscriptionJobs {
         if (trimmed.isEmpty()) return Outcome("", "Keine Sprache erkannt", isError = false)
         val language = if (setup.parakeet) "" else TextPipeline.dictationLanguage(app)
 
+        // Smart Routing: höchstens ~1,5 s Wartezeit, bei jedem Problem null →
+        // dann läuft alles wie ohne Jev.
+        val decision = classify(app, trimmed, seconds, language, source, prefix)
+        if (decision?.discard == true) {
+            // Mikrofontest oder Gemurmel: nicht als Notiz speichern, der Text bleibt sichtbar
+            return Outcome(trimmed, "Als Rauschen erkannt — nicht im Verlauf gespeichert", isError = false, analysis = decision.analysis)
+        }
+
         // Eigene Aufnahme = Diktat: Snippets, Sprachbefehle, ggf. Enhance.
         // Dateien sind fremde Aufnahmen — dort bleibt der Text wörtlich.
         var note: String? = null
         if (source == HistoryEntry.SOURCE_APP) {
-            val enhance = Settings.enhanceAuto(app) && LlmManager.isConfigured(app)
+            // Mit Jev läuft das Sprachmodell nur, wenn der Text es braucht; ohne
+            // Antwort (offline …) bleibt es beim bisherigen Verhalten.
+            val needsCleanup = decision?.analysis?.needsCleanup ?: true
+            val enhance = Settings.enhanceAuto(app) && LlmManager.isConfigured(app) && needsCleanup
             if (enhance) _running.value = Running(prefix + "Verbessere Text", null, "Sprachmodell arbeitet …")
             val r = TextPipeline.finishDictation(app, trimmed, language, FormatMode.STANDARD, enhance)
             trimmed = r.text
             note = r.note
         }
-        HistoryStore.add(app, HistoryEntry(
+        val entry = HistoryEntry(
             timeMs = System.currentTimeMillis(),
             text = trimmed,
             model = setup.model,
             language = language,
             audioSeconds = seconds,
             source = source,
-        ))
-        return Outcome(trimmed, note, isError = false)
+        )
+        HistoryStore.add(app, decision?.let { entry.withAnalysis(it.analysis) } ?: entry)
+        return Outcome(trimmed, note, isError = false, analysis = decision?.analysis)
+    }
+
+    /// Nur Aufnahmen in der App und Dateien werden klassifiziert; die Oberfläche
+    /// zeigt währenddessen „Klassifiziere …“.
+    private suspend fun classify(app: Context, text: String, seconds: Float, language: String,
+                                 source: String, prefix: String): JevDecisionResult? {
+        if (source != HistoryEntry.SOURCE_APP && source != HistoryEntry.SOURCE_FILE) return null
+        if (!Jev.isActive(app)) return null
+        _running.value = Running(prefix + "Klassifiziere …", null, null)
+        return Jev.analyze(app, text, seconds.toDouble(), language)
     }
 }

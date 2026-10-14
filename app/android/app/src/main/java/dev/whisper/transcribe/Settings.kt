@@ -1,6 +1,8 @@
 package dev.whisper.transcribe
 
 import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
 
 /// Persistierte Laufzeit-Einstellungen, geteilt zwischen Haupt-App und Diktat-Overlay.
 object Settings {
@@ -125,4 +127,37 @@ object Settings {
     /// Nach einem Meeting automatisch Notizen schreiben (braucht ein LLM).
     fun meetingNotesAuto(context: Context) = bool(context, "meeting_notes_auto", true)
     fun setMeetingNotesAuto(context: Context, v: Boolean) = setBool(context, "meeting_notes_auto", v)
+
+    // ---- Smart Routing (TypeSafe Jev) ----
+
+    /// Transkripte per Jev klassifizieren. Standard aus — und wirkungslos ohne API-Key.
+    /// Achtung: sendet den Transkripttext an api.typesafe.ai.
+    fun jevEnabled(context: Context) = bool(context, "jev_enabled", false)
+    fun setJevEnabled(context: Context, v: Boolean) = setBool(context, "jev_enabled", v)
+
+    fun jevApiKey(context: Context): String = prefs(context).getString("jev_api_key", null).orEmpty()
+    fun setJevApiKey(context: Context, key: String) =
+        prefs(context).edit().putString("jev_api_key", key.trim()).apply()
+
+    /// Gepinnt statt „jev-latest“: kalibrierte Schwellenwerte driften bei Modell-Updates sonst.
+    fun jevModel(context: Context): String =
+        prefs(context).getString("jev_model", null)?.takeIf { it.isNotBlank() } ?: JevQuestions.DEFAULT_MODEL
+    fun setJevModel(context: Context, model: String) =
+        prefs(context).edit().putString("jev_model", model.trim()).apply()
+
+    /// Eigene Projekte für die Zuordnung; ohne eigene Liste die mitgelieferten.
+    fun jevProjectTags(context: Context): List<JevProjectTag> {
+        val json = prefs(context).getString("jev_project_tags", null) ?: return JevQuestions.DEFAULT_TAGS
+        return runCatching {
+            val arr = JSONArray(json)
+            List(arr.length()) { i -> arr.getJSONObject(i).let { JevProjectTag(it.getString("k"), it.optString("d")) } }
+        }.getOrDefault(JevQuestions.DEFAULT_TAGS)
+    }
+
+    fun setJevProjectTags(context: Context, tags: List<JevProjectTag>) {
+        val arr = JSONArray()
+        JevDecision.sanitizeTags(tags).forEach { arr.put(JSONObject().put("k", it.key).put("d", it.description)) }
+        prefs(context).edit().putString("jev_project_tags", arr.toString()).apply()
+    }
 }
+

@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>WhisperOffline</RootNamespace>
     <AssemblyName>WhisperOffline</AssemblyName>
-    <Version>3.4.0</Version>
+    <Version>3.5.0</Version>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 

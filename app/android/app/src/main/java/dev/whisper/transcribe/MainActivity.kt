@@ -138,6 +138,15 @@ fun App(
         Work(r.title, r.fraction, r.detail, onCancel = if (r.cancelling) null else ({ TranscriptionJobs.cancel() }))
     }
     var transcript by rememberSaveable { mutableStateOf("") }
+    // Smart-Routing-Ergebnis zum Transkript; nach Neuerstellung der Aktivität
+    // (Drehen, Dunkelmodus) aus dem Verlauf wiederhergestellt.
+    var analysis by remember {
+        mutableStateOf(
+            if (transcript.isNotEmpty() && Jev.isActive(context))
+                HistoryStore.load(context).firstOrNull { it.text == transcript }?.analysis()
+            else null
+        )
+    }
     var language by remember { mutableStateOf(Settings.language(context)) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var statusIsError by remember { mutableStateOf(false) }
@@ -354,7 +363,10 @@ fun App(
     // fertig wurde, während die App im Hintergrund war.
     LaunchedEffect(outcome) {
         val o = outcome ?: return@LaunchedEffect
-        o.text?.let { transcript = it }
+        o.text?.let {
+            transcript = it
+            if (!o.keepAnalysis) analysis = o.analysis
+        }
         showStatus(o.message, o.isError)
         TranscriptionJobs.consumeOutcome()
     }
@@ -577,17 +589,21 @@ fun App(
         }
     }
 
+    fun runTransform(instruction: String, title: String) {
+        val source = transcript
+        val lang = TextRules.guessLanguage(source).ifEmpty { TextPipeline.dictationLanguage(context) }
+        TranscriptionJobs.startTransform(context, source, title) { app ->
+            Enhancer.transform(app, source, instruction, lang)
+        }
+    }
+
     if (showTransform) {
         TransformDialog(
             text = transcript,
             onDismiss = { showTransform = false },
             onRun = { instruction, title ->
                 showTransform = false
-                val source = transcript
-                val lang = TextRules.guessLanguage(source).ifEmpty { TextPipeline.dictationLanguage(context) }
-                TranscriptionJobs.startTransform(context, source, title) { app ->
-                    Enhancer.transform(app, source, instruction, lang)
-                }
+                runTransform(instruction, title)
             },
         )
     }
@@ -857,7 +873,20 @@ fun App(
                         transcript = edited
                     },
                     onTransform = if (LlmManager.isConfigured(context) && !busy) ({ showTransform = true }) else null,
-                    onClear = if (transcript.isNotEmpty()) ({ transcript = "" }) else null,
+                    onClear = if (transcript.isNotEmpty()) ({ transcript = ""; analysis = null }) else null,
+                    analysis = analysis,
+                    onPickIntent = { picked ->
+                        analysis?.let { current ->
+                            val switched = current.copy(intent = picked, topAlternativeIntent = current.intent)
+                            analysis = switched
+                            HistoryStore.updateAnalysis(context, transcript, switched)
+                        }
+                    },
+                    onSmooth = if (LlmManager.isConfigured(context) && !busy) ({
+                        // Nur die Anzeige: das Original im Verlauf behält seine Klassifikation
+                        analysis = analysis?.copy(needsCleanup = false)
+                        runTransform(Prompts.action(context, "improve"), "Text glätten")
+                    }) else null,
                     modifier = modifier,
                 )
 

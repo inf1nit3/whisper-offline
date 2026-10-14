@@ -331,6 +331,12 @@ fun TranscriptCard(
     onTransform: (() -> Unit)? = null,
     /// Transkript leeren; null = Knopf ausblenden.
     onClear: (() -> Unit)? = null,
+    /// Smart Routing (Jev): erkannte Kategorie, Projekt, Dringlichkeit; null = keine Badges.
+    analysis: JevAnalysis? = null,
+    /// Nutzer wählt die alternative Kategorie.
+    onPickIntent: ((String) -> Unit)? = null,
+    /// „Text glätten“; null = Knopf ausblenden (kein Sprachmodell eingerichtet).
+    onSmooth: (() -> Unit)? = null,
 ) {
     var editing by rememberSaveable { mutableStateOf(false) }
     // Cursor ans Ende — man ergänzt meist etwas oder korrigiert den Schluss
@@ -366,6 +372,9 @@ fun TranscriptCard(
                     else -> Spacer(Modifier.height(48.dp))
                 }
             }
+            if (analysis != null && !live && !editing && text.isNotEmpty()) {
+                AnalysisBadges(analysis, onPickIntent, onSmooth, Modifier.padding(end = 12.dp, bottom = 8.dp))
+            }
             when {
                 editing -> OutlinedTextField(
                     value = draft,
@@ -392,6 +401,59 @@ fun TranscriptCard(
                 }
             }
         }
+    }
+}
+
+/// Smart-Routing-Ergebnis: Kategorie, Projekt und Dringlichkeit als Badges.
+/// Bei mittlerer Sicherheit bietet ein Chip die zweitwahrscheinlichste Kategorie
+/// zum Umschalten an; „Text glätten“ erscheint nur, wenn Jev Bedarf sieht und
+/// ein Sprachmodell eingerichtet ist (onSmooth != null).
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AnalysisBadges(
+    analysis: JevAnalysis,
+    onPickIntent: ((String) -> Unit)?,
+    onSmooth: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    FlowRow(
+        modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        AnalysisBadge(JevDecision.intentLabel(analysis.intent), MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer)
+        analysis.projectTag?.let {
+            AnalysisBadge(JevDecision.prettyKey(it), MaterialTheme.colorScheme.secondaryContainer,
+                MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+        analysis.urgencyScore?.let {
+            AnalysisBadge("Prio: %.1f".format(it), MaterialTheme.colorScheme.tertiaryContainer,
+                MaterialTheme.colorScheme.onTertiaryContainer)
+        }
+        val alternative = analysis.topAlternativeIntent
+        if (analysis.needsDisambiguation && alternative != null && onPickIntent != null) {
+            AssistChip(
+                onClick = { onPickIntent(alternative) },
+                label = { Text("Eher: ${JevDecision.intentLabel(alternative)}?") },
+                leadingIcon = { Icon(Icons.Filled.SwapHoriz, null, Modifier.size(18.dp)) },
+            )
+        }
+        if (analysis.needsCleanup == true && onSmooth != null) {
+            AssistChip(
+                onClick = onSmooth,
+                label = { Text("Text glätten") },
+                leadingIcon = { Icon(Icons.Filled.AutoAwesome, null, Modifier.size(18.dp)) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnalysisBadge(text: String, container: Color, content: Color) {
+    Surface(shape = RoundedCornerShape(8.dp), color = container, contentColor = content) {
+        Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
     }
 }
 
