@@ -66,7 +66,7 @@ public class UiRenderTests
         Call("ShowBatch"); Shot(w, dir, "7-batch");
         Call("ShowProfiles"); Shot(w, dir, "8-profiles");
         var o = new DictationOverlay();
-        o.ShowRecording(() => 0.4f, "✨ E-Mail");
+        o.ShowRecording(() => 0.4f, null, "✨ E-Mail");
         o.SetLive("Hallo Herr Müller, vielen Dank für Ihre Nachricht, ich schicke Ihnen die Unterlagen bis Freitag");
         Settle((WaveformView)typeof(DictationOverlay).GetField("level", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(o)!);
         o.CaptureRenderedFrame()?.Save(Path.Combine(dir, "9-overlay.png"));
