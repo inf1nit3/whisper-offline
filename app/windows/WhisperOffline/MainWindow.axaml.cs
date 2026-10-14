@@ -829,6 +829,22 @@ public partial class MainWindow : Window
     private LiveTranscriber? windowLive;
     private string transcriptBeforeLive = "";
 
+    // Smart Routing (Jev): Klassifikation zum aktuellen Transkript und der
+    // Text, unter dem er im Verlauf gespeichert ist (fürs Nachziehen beim
+    // Umschalten der Kategorie).
+    private JevAnalysis? analysis;
+    private string? analysisHistoryText;
+
+    /// Smart Routing: nur Aufnahmen im Fenster und Dateien werden klassifiziert.
+    /// Höchstens ~1,5 s Wartezeit, bei jedem Problem null → alles wie ohne Jev.
+    private async Task<JevDecisionResult?> ClassifyAsync(string text, double seconds, string source)
+    {
+        if (source is not ("app" or "file")) return null;
+        if (!Jev.IsActive(settings)) return null;
+        StatusLabel.Text = "Klassifiziere …";
+        return await Jev.AnalyzeAsync(settings, text, seconds, WhisperNative.IsParakeet ? "" : Lang);
+    }
+
     private async void OnRecordClick(object? sender, RoutedEventArgs e)
     {
         if (busy || dictating || !File.Exists(WhisperCli.SelectedModel)) return;
@@ -869,10 +885,27 @@ public partial class MainWindow : Window
         StatusLabel.Text = $"Transkribiere {samples.Length / 16000f:F1} s Audio…";
         var result = await TranscribeWithProgress(samples, live);
         string? note = null;
+        // Smart Routing klassifiziert den Rohtext (vor Enhance), damit die
+        // Entscheidung nicht vom geglätteten Text abhängt.
+        var decision = result.Length > 0 ? await ClassifyAsync(result, samples.Length / 16000.0, "app") : null;
+        if (decision is { Discard: true })
+        {
+            // Mikrofontest oder Gemurmel: nicht als Notiz speichern, der Text bleibt sichtbar
+            analysis = decision.Analysis;
+            AppendTranscript(result, samples.Length / 16000f, "app", saveHistory: false);
+            RenderAnalysis();
+            StatusLabel.Text = "Als Rauschen erkannt — nicht im Verlauf gespeichert";
+            Waveform.ShowIdle();
+            busy = false;
+            return;
+        }
         if (result.Length > 0)
         {
-            // Eigene Aufnahme = Diktat: Snippets, Sprachbefehle, ggf. Enhance
-            bool enhance = settings.EnhanceAuto && Enhancer.IsConfigured(settings);
+            // Eigene Aufnahme = Diktat: Snippets, Sprachbefehle, ggf. Enhance.
+            // Mit Jev läuft das Sprachmodell nur, wenn der Text es braucht;
+            // ohne Antwort (offline …) bleibt es beim bisherigen Verhalten.
+            bool enhance = settings.EnhanceAuto && Enhancer.IsConfigured(settings) &&
+                           (decision?.Analysis.NeedsCleanup ?? true);
             if (enhance) StatusLabel.Text = "Verbessere Text…";
             ShowWork(cancellable: enhance);
             enhanceCts = new CancellationTokenSource();
@@ -882,7 +915,9 @@ public partial class MainWindow : Window
             result = r.Text;
             note = r.Note;
         }
-        AppendTranscript(result, samples.Length / 16000f, "app");
+        analysis = decision?.Analysis;
+        AppendTranscript(result, samples.Length / 16000f, "app", analysis);
+        RenderAnalysis();
         StatusLabel.Text = ResultStatus(result, samples.Length / 16000.0) + (note != null ? " " + note : "");
         Waveform.ShowIdle();
         busy = false;
@@ -947,8 +982,7 @@ public partial class MainWindow : Window
                 var seconds = samples.Length / 16000.0;
                 StatusLabel.Text = $"Transkribiere „{name}“ ({seconds:F1} s Audio)…";
                 var text = await TranscribeWithProgress(samples);
-                AppendTranscript(text, (float)seconds, "file");
-                StatusLabel.Text = ResultStatus(text, seconds);
+                await FinishFileAsync(text, seconds, ResultStatus(text, seconds));
             }
             else if (samples != null)
             {
@@ -967,8 +1001,8 @@ public partial class MainWindow : Window
                 var text = await Task.Run(() => Transcriber.Post(WhisperCli.Transcribe(path!, lang, out err,
                     TextMatching.Prompt(settings.Vocabulary, VocabularyDefaults.Lower), settings.Translate), settings));
                 HideWork();
-                AppendTranscript(text, 0, "file");
-                StatusLabel.Text = err.Length > 0 ? err : text.Trim().Length == 0 ? "Keine Sprache erkannt." : "Fertig.";
+                await FinishFileAsync(text, 0,
+                    err.Length > 0 ? err : text.Trim().Length == 0 ? "Keine Sprache erkannt." : "Fertig.");
             }
         }
         finally
@@ -980,24 +1014,135 @@ public partial class MainWindow : Window
         busy = false;
     }
 
-    private void AppendTranscript(string text, float audioSeconds, string source)
+    private void AppendTranscript(string text, float audioSeconds, string source,
+        JevAnalysis? analysis = null, bool saveHistory = true)
     {
         var t = text.Trim();
         if (t.Length == 0) return;
         TranscriptBox.Text = TranscriptBox.Text?.Length > 0
             ? TranscriptBox.Text + "\n\n" + t
             : t;
-        AddHistory(t, audioSeconds, source);
+        if (saveHistory) AddHistory(t, audioSeconds, source, analysis);
+        if (analysis != null) analysisHistoryText = t;
     }
 
-    private void AddHistory(string text, float audioSeconds, string source) =>
-        HistoryStore.Add(new HistoryEntry(
+    private void AddHistory(string text, float audioSeconds, string source, JevAnalysis? analysis = null)
+    {
+        var entry = new HistoryEntry(
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             text,
             Path.GetFileName(WhisperCli.SelectedModel),
             WhisperNative.IsParakeet ? "" : Transcriber.DictationLanguage(settings),
             audioSeconds,
-            source));
+            source);
+        HistoryStore.Add(analysis != null ? entry.WithAnalysis(analysis) : entry);
+    }
+
+    /// Gemeinsames Ende für Datei-Transkriptionen: Smart Routing, Rauschen-Wurf, Verlauf, Status.
+    private async Task FinishFileAsync(string text, double seconds, string status)
+    {
+        var decision = await ClassifyAsync(text, seconds, "file");
+        if (decision is { Discard: true })
+        {
+            analysis = decision.Analysis;
+            AppendTranscript(text, (float)seconds, "file", saveHistory: false);
+            RenderAnalysis();
+            StatusLabel.Text = "Als Rauschen erkannt — nicht im Verlauf gespeichert";
+            return;
+        }
+        analysis = decision?.Analysis;
+        AppendTranscript(text, (float)seconds, "file", analysis);
+        RenderAnalysis();
+        StatusLabel.Text = status;
+    }
+
+    // ---------- Smart Routing (Jev): Badges am Transkript ----------
+
+    /// Kategorie, Projekt und Dringlichkeit als Badges; bei mittlerer
+    /// Sicherheit bietet ein Chip die zweitwahrscheinlichste Kategorie zum
+    /// Umschalten an; „Text glätten“ erscheint nur, wenn Jev Bedarf sieht
+    /// und ein Sprachmodell eingerichtet ist.
+    private void RenderAnalysis()
+    {
+        AnalysisBadges.Children.Clear();
+        var a = analysis;
+        if (a == null || string.IsNullOrWhiteSpace(TranscriptBox.Text))
+        {
+            AnalysisBadges.IsVisible = false;
+            return;
+        }
+        AnalysisBadges.Children.Add(Badge(JevDecision.IntentLabel(a.Intent),
+            "BrandPrimaryContainerBrush", "BrandPrimaryBrush"));
+        if (a.ProjectTag != null)
+            AnalysisBadges.Children.Add(Badge(JevDecision.PrettyKey(a.ProjectTag),
+                "BrandBadgeProjectBrush", "BrandBadgeProjectTextBrush"));
+        if (a.UrgencyScore is { } u)
+            AnalysisBadges.Children.Add(Badge($"Prio: {u:F1}",
+                "BrandBadgePrioBrush", "BrandBadgePrioTextBrush"));
+        if (a.NeedsDisambiguation && a.TopAlternativeIntent is { } alt)
+        {
+            var chip = new Button { Classes = { "chip" }, Content = "⇄  Eher: " + JevDecision.IntentLabel(alt) + "?" };
+            chip.Click += (_, _) => PickIntent(alt);
+            AnalysisBadges.Children.Add(chip);
+        }
+        if (a.NeedsCleanup == true && Enhancer.IsConfigured(settings))
+        {
+            var smooth = new Button { Classes = { "chip" }, Content = "✨  Text glätten" };
+            smooth.Click += async (_, _) => await SmoothTranscriptAsync();
+            AnalysisBadges.Children.Add(smooth);
+        }
+        AnalysisBadges.IsVisible = AnalysisBadges.Children.Count > 0;
+    }
+
+    private static Control Badge(string text, string backgroundKey, string foregroundKey) => new Border
+    {
+        CornerRadius = new CornerRadius(8),
+        Padding = new Thickness(10, 4),
+        Background = BrandBrush(backgroundKey, Brushes.LightGray),
+        Child = new TextBlock
+        {
+            Text = text, FontSize = 12, FontWeight = FontWeight.Medium,
+            Foreground = BrandBrush(foregroundKey, Brushes.Black),
+        },
+    };
+
+    /// Nutzer übersteuert die Kategorie: Badges und Verlauf nachziehen.
+    private void PickIntent(string picked)
+    {
+        if (analysis is not { } current) return;
+        var switched = current with { Intent = picked, TopAlternativeIntent = current.Intent };
+        analysis = switched;
+        if (analysisHistoryText is { Length: > 0 } h) HistoryStore.UpdateAnalysis(h, switched);
+        RenderAnalysis();
+    }
+
+    /// „Text glätten“: Sprachmodell glättet nur die Anzeige — das Original
+    /// im Verlauf behält seine Klassifikation.
+    private async Task SmoothTranscriptAsync()
+    {
+        var text = TranscriptBox.Text?.Trim() ?? "";
+        if (busy || text.Length == 0 || !Enhancer.IsConfigured(settings)) return;
+        if (analysis is { } a) analysis = a with { NeedsCleanup = false };
+        busy = true;
+        ShowWork(cancellable: true);
+        StatusLabel.Text = "Glätte Text …";
+        enhanceCts = new CancellationTokenSource();
+        var lang = TextRules.GuessLanguage(text);
+        var o = await Enhancer.TransformAsync(settings, text, TransformActions.Instruction("improve", text),
+            lang.Length > 0 ? lang : Transcriber.DictationLanguage(settings), enhanceCts.Token);
+        HideWork();
+        busy = false;
+        if (o.Text != null)
+        {
+            TranscriptBox.Text = o.Text;
+            StatusLabel.Text = "Text geglättet ✓ — der Verlauf behält das Original";
+        }
+        else
+        {
+            StatusLabel.Text = o.Cancelled ? "Abgebrochen." : "Sprachmodell fehlgeschlagen: " + o.Error;
+        }
+        RenderAnalysis();
+    }
 
     // ---------- Verlauf: siehe MainWindow.Panels.cs ----------
 
@@ -1007,7 +1152,13 @@ public partial class MainWindow : Window
             await Clipboard!.SetTextAsync(TranscriptBox.Text);
     }
 
-    private void OnClearClick(object? sender, RoutedEventArgs e) => TranscriptBox.Text = "";
+    private void OnClearClick(object? sender, RoutedEventArgs e)
+    {
+        TranscriptBox.Text = "";
+        analysis = null;
+        analysisHistoryText = null;
+        RenderAnalysis();
+    }
 
     // ---------- Teilen ----------
     private void OnShareClick(object? sender, RoutedEventArgs e) { } // öffnet nur das Flyout

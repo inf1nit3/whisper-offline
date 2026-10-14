@@ -2,6 +2,7 @@ using System.IO;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -307,6 +308,10 @@ public partial class MainWindow
         enhCard.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { profilesBtn, promptBtn } });
         p.Children.Add(Card(enhCard));
 
+        // Smart Routing (TypeSafe Jev)
+        p.Children.Add(Section("Smart Routing (TypeSafe Jev.ai)"));
+        p.Children.Add(Card(BuildJevSettings()));
+
         // Meeting
         p.Children.Add(Section("Meeting"));
         var meetCard = new StackPanel { Spacing = 8 };
@@ -317,6 +322,171 @@ public partial class MainWindow
         p.Children.Add(Card(meetCard));
 
         ShowPanel("Einstellungen", "Änderungen gelten sofort", Scroll(p));
+    }
+
+    // ---------- Smart Routing (Jev) ----------
+
+    private string JevModelOf() =>
+        string.IsNullOrWhiteSpace(settings.JevModel) ? JevQuestions.DefaultModel : settings.JevModel.Trim();
+
+    /// Smart Routing: Schalter, API-Key (maskiert), Verbindungstest, Modell,
+    /// Projekt-Tags. Ohne Key bleibt der Schalter gesperrt — die App
+    /// funktioniert dann wie bisher offline.
+    private Control BuildJevSettings()
+    {
+        var card = new StackPanel { Spacing = 8 };
+
+        var testResult = Hint("");
+        var enable = new CheckBox { Content = "Jev Post-Processing aktivieren", IsChecked = settings.JevEnabled, FontWeight = FontWeight.Medium };
+        var keyBox = new TextBox { Text = settings.JevApiKey, Watermark = "TypeSafe API Key", PasswordChar = '•', MinWidth = 360 };
+        void SyncEnable()
+        {
+            enable.IsEnabled = !string.IsNullOrWhiteSpace(keyBox.Text);
+            if (!enable.IsEnabled && enable.IsChecked == true)
+            {
+                enable.IsChecked = false;
+                settings.JevEnabled = false;
+                settings.Save();
+            }
+        }
+        keyBox.TextChanged += (_, _) =>
+        {
+            settings.JevApiKey = (keyBox.Text ?? "").Trim();
+            settings.Save();
+            testResult.Text = "";
+            SyncEnable();
+        };
+        enable.IsCheckedChanged += (_, _) => { settings.JevEnabled = enable.IsChecked == true; settings.Save(); };
+        SyncEnable();
+
+        var test = new Button { Content = "Verbindung testen", Classes = { "chip" } };
+        test.Click += async (_, _) =>
+        {
+            var key = (keyBox.Text ?? "").Trim();
+            if (key.Length == 0) return;
+            test.IsEnabled = false;
+            testResult.Text = "Teste …";
+            var r = await Jev.TestConnectionAsync(key, JevModelOf());
+            testResult.Text = r switch
+            {
+                JevClient.Result.Success => "✓ Verbindung steht",
+                JevClient.Result.Failure f => f.Message,
+                _ => "",
+            };
+            test.IsEnabled = true;
+        };
+
+        var modelBox = new TextBox { Text = JevModelOf(), Watermark = "jev-1.13.0", MinWidth = 240 };
+        modelBox.LostFocus += (_, _) => { settings.JevModel = (modelBox.Text ?? "").Trim(); settings.Save(); };
+
+        var tagsBtn = new Button { Content = $"Projekt-Tags ({Jev.ProjectTags(settings).Count}) …", Classes = { "chip" } };
+        tagsBtn.Click += async (_, _) =>
+        {
+            await ShowProjectTags();
+            tagsBtn.Content = $"Projekt-Tags ({Jev.ProjectTags(settings).Count}) …";
+        };
+
+        card.Children.Add(enable);
+        card.Children.Add(Hint("Ordnet Aufnahmen nach Kategorie, Projekt und Dringlichkeit ein und lässt „Enhance“ nur laufen, wenn der Text es braucht. Sendet den Transkripttext an api.typesafe.ai; ohne Internet oder Key bleibt alles wie gehabt."));
+        card.Children.Add(keyBox);
+        card.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { test, testResult.With(t => t.VerticalAlignment = VerticalAlignment.Center) } });
+        card.Children.Add(modelBox);
+        card.Children.Add(Hint($"Gepinnt, damit sich Schwellenwerte bei Modell-Updates nicht verschieben. Standard: {JevQuestions.DefaultModel}"));
+        card.Children.Add(tagsBtn);
+        return card;
+    }
+
+    /// Eigene Projekte (Schlüssel + kurze Beschreibung); sie landen als
+    /// Kriterien von `project_context` in jeder Anfrage. „unassigned“ ergänzt
+    /// die App selbst.
+    private async Task ShowProjectTags()
+    {
+        var tags = new List<JevProjectTag>(Jev.ProjectTags(settings));
+        var tcs = new TaskCompletionSource<bool>();
+        var w = new Window
+        {
+            Title = "Projekt-Tags", Width = 560, SizeToContent = SizeToContent.Height, CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = BrandBrush("BrandSurfaceBrush", Brushes.White),
+        };
+
+        var list = new StackPanel { Spacing = 6 };
+        var add = new Button { Content = "Tag hinzufügen", Classes = { "chip" } };
+        void Render()
+        {
+            list.Children.Clear();
+            foreach (var t in tags)
+            {
+                var tag = t;
+                var del = new Button { Content = "✕", Classes = { "chip" }, Foreground = ErrorBrush, Padding = new Thickness(8, 3) };
+                del.Click += (_, _) => { tags.Remove(tag); Render(); };
+                list.Children.Add(new DockPanel
+                {
+                    Children =
+                    {
+                        del.With(d => DockPanel.SetDock(d, Dock.Right)),
+                        new StackPanel
+                        {
+                            Spacing = 1,
+                            Children =
+                            {
+                                new TextBlock { Text = tag.Key, FontWeight = FontWeight.Medium },
+                                new TextBlock { Text = tag.Description, FontSize = 12, Foreground = SubtleBrush, TextWrapping = TextWrapping.Wrap },
+                            },
+                        },
+                    },
+                });
+            }
+            add.IsEnabled = CanAdd();
+        }
+
+        var keyBox = new TextBox { Watermark = "Schlüssel (z. B. whisper_app)", MinWidth = 240 };
+        var descBox = new TextBox { Watermark = "Woran Jev das Projekt erkennt (z. B. Server, Docker, Netzwerk)", TextWrapping = TextWrapping.Wrap };
+        bool CanAdd() => (keyBox.Text ?? "").Trim().Length > 0 &&
+                         (keyBox.Text ?? "").Trim() != JevDecision.ProjectUnassigned &&
+                         tags.Count < JevDecision.MaxTags;
+        void Add()
+        {
+            if (!CanAdd()) return;
+            var key = (keyBox.Text ?? "").Trim();
+            tags = JevDecision.SanitizeTags(tags.Where(t => t.Key != key).Append(new JevProjectTag(key, (descBox.Text ?? "").Trim())));
+            keyBox.Text = "";
+            descBox.Text = "";
+            Render();
+        }
+        add.Click += (_, _) => Add();
+        keyBox.KeyDown += (_, e) => { if (e.Key == Key.Enter) Add(); };
+
+        var save = new Button { Content = "Speichern", Classes = { "primaryAction" } };
+        save.Click += (_, _) => { settings.JevProjectTags = JevDecision.SanitizeTags(tags); settings.Save(); tcs.TrySetResult(true); w.Close(); };
+        var standard = new Button { Content = "Standard", Classes = { "chip" } };
+        standard.Click += (_, _) => { tags = new List<JevProjectTag>(JevQuestions.DefaultTags); Render(); };
+        var cancel = new Button { Content = "Abbrechen", Classes = { "chip" }, IsCancel = true };
+        cancel.Click += (_, _) => { tcs.TrySetResult(false); w.Close(); };
+        w.Closed += (_, _) => tcs.TrySetResult(false);
+
+        w.Content = new Border
+        {
+            Margin = new Thickness(16),
+            Classes = { "card" },
+            Child = new StackPanel
+            {
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock { Text = "Projekt-Tags", FontSize = 16, FontWeight = FontWeight.SemiBold },
+                    Hint("Schlüssel (z. B. whisper_app) und eine kurze Beschreibung, woran Jev das Projekt erkennt."),
+                    new ScrollViewer { Content = list, MaxHeight = 300, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
+                    keyBox,
+                    descBox,
+                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { add, standard } },
+                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { cancel, save } },
+                },
+            },
+        };
+        Render();
+        await w.ShowDialog(this);
+        await tcs.Task;
     }
 
     private async Task EditPrompt()

@@ -47,6 +47,12 @@
                     <SolidColorBrush x:Key="BrandStageBrush" Color="#EDF2FA" />
                     <SolidColorBrush x:Key="BrandStageBorderBrush" Color="#E0E8F4" />
 
+                    <!-- Smart-Routing-Badges: Projekt (violett), Dringlichkeit (bernstein) -->
+                    <SolidColorBrush x:Key="BrandBadgeProjectBrush" Color="#E7E2F8" />
+                    <SolidColorBrush x:Key="BrandBadgeProjectTextBrush" Color="#57479B" />
+                    <SolidColorBrush x:Key="BrandBadgePrioBrush" Color="#FBEADB" />
+                    <SolidColorBrush x:Key="BrandBadgePrioTextBrush" Color="#9A5B12" />
+
                     <!-- Chips mit ruhiger Füllung statt nacktem Text -->
                     <SolidColorBrush x:Key="BrandChipBackgroundBrush" Color="#ECF0F8" />
                     <SolidColorBrush x:Key="BrandChipBorderBrush" Color="#DCE3EF" />
@@ -89,6 +95,11 @@
 
                     <SolidColorBrush x:Key="BrandStageBrush" Color="#0D1117" />
                     <SolidColorBrush x:Key="BrandStageBorderBrush" Color="#272D38" />
+
+                    <SolidColorBrush x:Key="BrandBadgeProjectBrush" Color="#2E2848" />
+                    <SolidColorBrush x:Key="BrandBadgeProjectTextBrush" Color="#C9BBF2" />
+                    <SolidColorBrush x:Key="BrandBadgePrioBrush" Color="#3B2E1C" />
+                    <SolidColorBrush x:Key="BrandBadgePrioTextBrush" Color="#F0C084" />
 
                     <SolidColorBrush x:Key="BrandChipBackgroundBrush" Color="#212732" />
                     <SolidColorBrush x:Key="BrandChipBorderBrush" Color="#343B48" />

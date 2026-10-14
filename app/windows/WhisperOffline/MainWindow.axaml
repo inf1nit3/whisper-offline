@@ -126,7 +126,7 @@
 
             <!-- TranscriptCard (analog zu TranscriptCard in Components.kt) -->
             <Border Grid.Row="3" Classes="card">
-                <Grid RowDefinitions="Auto,*">
+                <Grid RowDefinitions="Auto,Auto,*">
                     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                             <TextBlock Text="📝" FontSize="15" VerticalAlignment="Center" />
@@ -148,10 +148,14 @@
                                 </Button.Flyout>
                             </Button>
                             <Button Classes="chip" Content="Leeren" Click="OnClearClick" />
-                        </StackPanel>
-                    </Grid>
+                    </StackPanel>
+                </Grid>
 
-                    <TextBox Grid.Row="1" x:Name="TranscriptBox"
+                <!-- Smart Routing (Jev): Kategorie, Projekt, Dringlichkeit; wird im Code befüllt -->
+                <WrapPanel Grid.Row="1" x:Name="AnalysisBadges" Orientation="Horizontal"
+                           ItemSpacing="6" LineSpacing="6" Margin="0,0,0,8" IsVisible="False" />
+
+                <TextBox Grid.Row="2" x:Name="TranscriptBox"
                              AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="False"
                              BorderThickness="0" Background="Transparent" FontSize="14"
                              Watermark="Aufnehmen, eine Audiodatei wählen oder per Hotkey überall diktieren…" />

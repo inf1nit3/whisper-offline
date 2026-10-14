@@ -118,6 +118,21 @@ public sealed class AppSettings
     /// "mic", "system" oder "both".
     public string MeetingSource { get; set; } = "both";
 
+    // ---- Smart Routing (TypeSafe Jev) ----
+
+    /// Transkripte per Jev klassifizieren. Standard aus — und wirkungslos ohne API-Key.
+    /// Achtung: sendet den Transkripttext an api.typesafe.ai.
+    public bool JevEnabled { get; set; } = false;
+
+    public string JevApiKey { get; set; } = "";
+
+    /// Gepinnt statt „jev-latest“: kalibrierte Schwellenwerte driften bei
+    /// Modell-Updates sonst. Leer = JevQuestions.DefaultModel.
+    public string JevModel { get; set; } = "";
+
+    /// Eigene Projekte für die Zuordnung; ohne eigene Liste die mitgelieferten.
+    public List<JevProjectTag> JevProjectTags { get; set; } = new();
+
     // -----------------------------------------------------------------------
 
     private static readonly JsonSerializerOptions JsonOpts = new()

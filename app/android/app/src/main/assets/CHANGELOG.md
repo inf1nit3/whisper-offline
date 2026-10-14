@@ -1,5 +1,27 @@
 # Changelog
 
+## v3.7
+
+**Windows: Smart Routing mit TypeSafe Jev (optional, standardmäßig aus)** — jetzt
+wie unter Android (v3.5), mit identischer Entscheidungslogik (alle Android-Tests
+der Klassifikation laufen auch unter Windows grün).
+
+- Nach der Transkription ordnet Jev Aufnahmen und Dateien in einer einzigen
+  Anfrage ein: Kategorie, Projekt, Dringlichkeit, „braucht Handlung", „braucht
+  Glättung" — als Badges am Transkript
+- Bei unsicherer Kategorie bietet ein Chip die zweitwahrscheinlichste zum
+  Umschalten an; „Text glätten" erscheint nur, wenn der Text es braucht
+- „Diktate automatisch verbessern" läuft mit Jev nur noch, wenn der Text es braucht
+- Kurze Aufnahmen aus reinem Rauschen (Mikrofontest) landen nicht im Verlauf
+- Einstellungen → Smart Routing: Schalter (erst mit API-Key), Verbindungstest,
+  Modell (gepinnt: jev-1.13.0), eigene Projekt-Tags
+- Offline-first: ohne Internet, Key oder bei mehr als 1,5 s Wartezeit bleibt alles
+  wie bisher. **Datenschutz:** nur wenn aktiviert, geht der Transkripttext an
+  api.typesafe.ai — sonst verlässt nichts das Gerät
+- Verlauf speichert die Klassifikation optional mit (ältere Einträge unverändert)
+
+**Android:** keine Änderungen gegenüber v3.5.
+
 ## v3.6
 
 **Windows: Die Sprach-Visualisierung funktioniert jetzt wirklich**
