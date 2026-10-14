@@ -21,7 +21,30 @@
         </Style>
     </Window.Styles>
 
-    <Grid>
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Eigene Titelleiste im App-Design: Logo, Titel, Fensterknöpfe -->
+        <Grid x:Name="TitleBar" Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Height="40"
+              Background="Transparent"
+              PointerPressed="OnTitleBarPressed" DoubleTapped="OnTitleBarDoubleTapped">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" Margin="14,0,0,0">
+                <Image Source="/Assets/logo-24.png" Width="20" Height="20"
+                       VerticalAlignment="Center" />
+                <TextBlock Text="Scheisssewasser's Whisper" FontSize="12" FontWeight="SemiBold"
+                           Foreground="{DynamicResource BrandSubtleTextBrush}" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button x:Name="MinimizeButton" Classes="caption" Click="OnMinimize"
+                        Content="&#xE921;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                <Button x:Name="MaximizeButton" Classes="caption" Click="OnToggleMaximize"
+                        Content="&#xE922;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                <Button x:Name="CloseButton" Classes="caption close" Click="OnCloseWindow"
+                        Content="&#xE8BB;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Bisheriger Fensterinhalt -->
+        <Grid Grid.Row="1">
         <!-- Hauptansicht (analog zur Android-Scaffold-Struktur) -->
         <Grid x:Name="MainPanel" RowDefinitions="Auto,Auto,Auto,*" Margin="20,16">
             <!-- TopAppBar: Titel links, Schnellnavigation rechts -->
@@ -260,5 +283,6 @@
                            TextWrapping="Wrap" Margin="0,12,0,0" />
             </Grid>
         </Border>
+        </Grid>
     </Grid>
 </Window>

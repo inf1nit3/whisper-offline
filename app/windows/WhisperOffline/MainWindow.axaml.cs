@@ -42,6 +42,12 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        // Eigene Titelleiste: Inhalt reicht bis oben, Systemleiste bleibt aus.
+        // (Im Code statt XAML: die Flags-Eigenschaft parst der XAML-Compiler nicht.)
+        ExtendClientAreaToDecorationsHint = true;
+        ExtendClientAreaChromeHints = ExtendClientAreaChromeHints.NoChrome;
+        ExtendClientAreaTitleBarHeightHint = -1;
+
         settings.SeedVocabulary();
         language = settings.Language;
         foreach (var item in LanguageBox.Items.OfType<ComboBoxItem>())
@@ -93,6 +99,17 @@ public partial class MainWindow : Window
         {
             if (!allowClose) { e.Cancel = true; Hide(); }
         };
+
+        // Eigene Titelleiste: Glyphen des Maximieren-Knopfs mitziehen und im
+        // maximierten Zustand etwas Innenabstand halten (Randloses Fenster).
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property != WindowStateProperty) return;
+            bool max = WindowState == WindowState.Maximized;
+            MaximizeButton.Content = max ? "\uE923" : "\uE922";
+            Padding = max ? new Thickness(7) : default;
+        };
+
         SetupTray();
         ApplyHotkeys();
         HotkeyHook.Start((action, edge) => Dispatcher.UIThread.Post(() => OnHotkey(action, edge)));
@@ -345,6 +362,28 @@ public partial class MainWindow : Window
         tray.Clicked += (_, _) => { Show(); Activate(); };
         TrayIcon.SetIcons(Application.Current, new TrayIcons { tray });
     }
+
+    // ---------- Eigene Titelleiste ----------
+
+    /// Leiste ziehen: Fenster verschieben (Knöpfe fangen ihre Klicks selbst ab).
+    private void OnTitleBarPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        try { BeginMoveDrag(e); } catch { } // kann during Startvorgang fehlschlagen
+    }
+
+    private void OnTitleBarDoubleTapped(object? sender, TappedEventArgs e) => ToggleMaximize();
+
+    private void OnMinimize(object? sender, RoutedEventArgs e) =>
+        WindowState = WindowState.Minimized;
+
+    private void OnToggleMaximize(object? sender, RoutedEventArgs e) => ToggleMaximize();
+
+    private void ToggleMaximize() =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    /// Wie Alt+F4: der Closing-Handler legt die App in den Infobereich.
+    private void OnCloseWindow(object? sender, RoutedEventArgs e) => Close();
 
     /// Lesbarer Modellname für den Modell-Chip — wie modelDisplayName auf Android
     /// ("ggml-small-q5_1.bin" → "Whisper small", "ggml-parakeet-tdt-0.6b-v3-…" → "Parakeet v3").

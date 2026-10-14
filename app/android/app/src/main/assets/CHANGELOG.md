@@ -8,6 +8,9 @@
 - Android: neues Launcher-Symbol; ab Android 13 auch als einfarbiges Themen-Icon
 - Windows: Symbol der Exe, aller Fenster und des Tray-Symbols; in kleinen
   Größen eine vereinfachte, gut lesbare Fassung
+- Windows: eigene Titelleiste im App-Design (Logo + Titel, Minimieren/
+  Maximieren/Schließen im Windows-11-Stil) statt der grauen Systemleiste;
+  Schließen legt weiterhin in den Infobereich
 
 ## v3.7
 

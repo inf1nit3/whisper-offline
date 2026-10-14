@@ -56,6 +56,11 @@
                     <!-- Chips mit ruhiger Füllung statt nacktem Text -->
                     <SolidColorBrush x:Key="BrandChipBackgroundBrush" Color="#ECF0F8" />
                     <SolidColorBrush x:Key="BrandChipBorderBrush" Color="#DCE3EF" />
+
+                    <!-- Eigene Titelleiste: Fensterschalter -->
+                    <SolidColorBrush x:Key="BrandCaptionForegroundBrush" Color="#3A4453" />
+                    <SolidColorBrush x:Key="BrandCaptionHoverBrush" Color="#E3E9F2" />
+                    <SolidColorBrush x:Key="BrandCaptionPressedBrush" Color="#D5DDE9" />
                 </ResourceDictionary>
 
                 <ResourceDictionary x:Key="Dark">
@@ -103,6 +108,10 @@
 
                     <SolidColorBrush x:Key="BrandChipBackgroundBrush" Color="#212732" />
                     <SolidColorBrush x:Key="BrandChipBorderBrush" Color="#343B48" />
+
+                    <SolidColorBrush x:Key="BrandCaptionForegroundBrush" Color="#C9CEDA" />
+                    <SolidColorBrush x:Key="BrandCaptionHoverBrush" Color="#2B313C" />
+                    <SolidColorBrush x:Key="BrandCaptionPressedBrush" Color="#363D49" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
@@ -147,6 +156,35 @@
         </Style>
         <Style Selector="Button.primaryAction:pressed /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource BrandActionPressedBrush}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <!-- Fensterschalter der eigenen Titelleiste (Windows-11-Anmutung) -->
+        <Style Selector="Button.caption">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource BrandCaptionForegroundBrush}" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.caption:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource BrandCaptionHoverBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrandCaptionForegroundBrush}" />
+        </Style>
+        <Style Selector="Button.caption:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource BrandCaptionPressedBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrandCaptionForegroundBrush}" />
+        </Style>
+        <Style Selector="Button.caption.close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#C42B1C" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.caption.close:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#B12419" />
             <Setter Property="Foreground" Value="White" />
         </Style>
     </Application.Styles>
