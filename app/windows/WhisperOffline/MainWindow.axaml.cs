@@ -137,7 +137,7 @@ public partial class MainWindow : Window
         // Sprachauswahl hätte dort keine Wirkung.
         var parakeet = engineWarm && WhisperNative.IsParakeet;
         LanguageBox.IsEnabled = !parakeet;
-        if (parakeet) EngineLabel.Text += " · mehrsprachig, ohne Sprachauswahl";
+        if (parakeet) EngineLabel.Text += " · mehrsprachig";
     }
 
     /// Transkribiert Mikrofon-Samples. Bevorzugt die geladene Engine; nur wenn
@@ -224,7 +224,7 @@ public partial class MainWindow : Window
             ? "Kombination drücken…"
             : HotkeySpec.Describe(settings.HotkeyModifiers, settings.HotkeyVk);
         HotkeyHint.Text = HotkeyHook.LastBindOk
-            ? (settings.PushToTalk ? "gedrückt halten zum Sprechen" : "")
+            ? (settings.PushToTalk ? "Gedrückt halten zum Sprechen" : "Überall diktieren per Hotkey")
             : "Kombination ist belegt — bitte eine andere wählen";
         var more = new List<string>();
         if (settings.SingleKeyVk != 0) more.Add(HotkeySpec.DescribeSingle(settings.SingleKeyVk) + " allein: Diktat");
@@ -244,7 +244,6 @@ public partial class MainWindow : Window
 
     /// Wird von den Einstellungen gesetzt, damit deren Hotkey-Knöpfe mitziehen.
     private Action? settingsHotkeyRefresh;
-
     private HotkeyAction capturingTarget = HotkeyAction.Dictate;
 
     private void OnHotkeyCapture(object? sender, RoutedEventArgs e) => BeginHotkeyCapture(HotkeyAction.Dictate);
@@ -326,7 +325,7 @@ public partial class MainWindow : Window
         var rtb = new RenderTargetBitmap(new PixelSize(32, 32));
         using (var ctx = rtb.CreateDrawingContext())
         {
-            ctx.DrawRectangle(Brushes.SteelBlue, null, new Rect(0, 0, 32, 32), 6, 6);
+            ctx.DrawRectangle(new SolidColorBrush(Color.Parse("#2D5A88")), null, new Rect(0, 0, 32, 32), 7, 7);
             ctx.DrawEllipse(Brushes.White, null, new Point(16, 13), 4, 6);
             ctx.DrawRectangle(Brushes.White, null, new Rect(12, 19, 8, 2), 1, 1);
             ctx.DrawRectangle(Brushes.White, null, new Rect(15, 21, 2, 5), 1, 1);
@@ -358,26 +357,29 @@ public partial class MainWindow : Window
         TrayIcon.SetIcons(Application.Current, new TrayIcons { tray });
     }
 
-    private void UpdateModelLabel() =>
-        ModelLabel.Text = ModelDisplayName(Path.GetFileName(WhisperCli.SelectedModel));
-
     /// Lesbarer Modellname für den Modell-Chip — wie modelDisplayName auf Android
     /// ("ggml-small-q5_1.bin" → "Whisper small", "ggml-parakeet-tdt-0.6b-v3-…" → "Parakeet v3").
-    private string ModelDisplayName(string file)
+    private static string FormatModelDisplayName(string? file, List<ModelInfo>? manifestList)
     {
         if (string.IsNullOrEmpty(file)) return "Modell wählen…";
-        var label = manifest?.FirstOrDefault(m => m.File == file)?.Label;
-        if (label != null) return label.Split(" — ")[0];
-        var name = Path.GetFileNameWithoutExtension(file);
-        if (name.StartsWith("ggml-")) name = name[5..];
-        if (name.StartsWith("parakeet"))
+        var hit = manifestList?.FirstOrDefault(m => m.File == file);
+        if (hit != null) return hit.Label.Split(" — ")[0];
+        var baseName = Path.GetFileNameWithoutExtension(file);
+        if (baseName.StartsWith("ggml-")) baseName = baseName["ggml-".Length..];
+        if (baseName.StartsWith("parakeet"))
         {
-            var version = System.Text.RegularExpressions.Regex.Match(name, @"-(v\d+)");
-            return version.Success ? "Parakeet " + version.Groups[1].Value : "Parakeet";
+            var m = System.Text.RegularExpressions.Regex.Match(baseName, @"-(v\d+)");
+            return m.Success ? $"Parakeet {m.Groups[1].Value}" : "Parakeet";
         }
         // Quantisierung (q5_1, q8_0 …) ist für die Anzeige Rauschen
-        return "Whisper " + System.Text.RegularExpressions.Regex.Replace(name, @"-q\d+_\d+$", "");
+        baseName = System.Text.RegularExpressions.Regex.Replace(baseName, @"-q\d+_\d+$", "");
+        return "Whisper " + baseName;
     }
+
+    private void UpdateModelLabel() =>
+        ModelLabel.Text = File.Exists(WhisperCli.SelectedModel)
+            ? FormatModelDisplayName(Path.GetFileName(WhisperCli.SelectedModel), manifest)
+            : "Modell wählen…";
 
     private string Lang => language == "auto" ? "" : language;
 
@@ -391,16 +393,17 @@ public partial class MainWindow : Window
         PickerCloseButton.IsVisible = File.Exists(WhisperCli.SelectedModel);
         PickerList.Children.Clear();
         PickerError.Text = "";
-        PickerList.Children.Add(new TextBlock { Text = "Frage Server nach verfügbaren Modellen…", Foreground = Brushes.Gray });
+        PickerList.Children.Add(Hint("Frage Server nach verfügbaren Modellen…"));
         try
         {
             manifest = await ModelRegistry.FetchManifest();
+            UpdateModelLabel();
         }
         catch (Exception ex)
         {
             PickerList.Children.Clear();
             PickerError.Text = "Server nicht erreichbar: " + ex.Message;
-            var retry = new Button { Content = "Erneut versuchen", HorizontalAlignment = HorizontalAlignment.Left };
+            var retry = new Button { Content = "Erneut versuchen", Classes = { "chip" }, HorizontalAlignment = HorizontalAlignment.Left };
             retry.Click += async (_, _) => await OpenPickerAsync();
             PickerList.Children.Add(retry);
             return;
@@ -419,25 +422,35 @@ public partial class MainWindow : Window
         {
             var isLocal = local.Contains(info.File);
             var isCurrent = current == info.File;
-
-            var border = new Border
-            {
-                Classes = { "card" },
-                Padding = new Avalonia.Thickness(14),
-                Child = BuildModelCard(info, isLocal, isCurrent),
-            };
-            PickerList.Children.Add(border);
+            var cardBorder = Card(BuildModelCard(info, isLocal, isCurrent));
+            if (isCurrent) cardBorder.BorderBrush = PrimaryBrush;
+            PickerList.Children.Add(cardBorder);
         }
 
         // Lokale Modelle ohne Manifest-Eintrag
-        foreach (var f in local.Where(f => manifest.All(m => m.File != f)))
+        var extra = local.Where(f => manifest.All(m => m.File != f)).ToList();
+        if (extra.Count > 0) PickerList.Children.Add(Section("Weitere lokale Modelle"));
+        foreach (var f in extra)
         {
-            var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-            panel.Children.Add(new TextBlock { Text = f, VerticalAlignment = VerticalAlignment.Center });
-            var b = new Button { Content = "Aktivieren" };
-            b.Click += (_, _) => Activate(f);
-            panel.Children.Add(b);
-            PickerList.Children.Add(panel);
+            // Das aktive Modell nicht löschen — die Engine hält die Datei offen
+            var act = new Button { Content = "Aktivieren", Classes = { "chip" }, IsVisible = f != current };
+            act.Click += (_, _) => Activate(f);
+            var del = new Button { Content = "✕", Classes = { "chip" }, Foreground = ErrorBrush, IsVisible = f != current };
+            del.Click += async (_, _) =>
+            {
+                if (!await Confirm("Modell löschen?", $"„{f}“ wird vom Rechner entfernt.")) return;
+                try { File.Delete(Path.Combine(WhisperCli.ModelsDir, f)); } catch { }
+                BuildPickerList();
+            };
+            PickerList.Children.Add(Card(new DockPanel
+            {
+                Children =
+                {
+                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { act, del } }
+                        .With(s => DockPanel.SetDock(s, Dock.Right)),
+                    new TextBlock { Text = f, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.Medium },
+                },
+            }));
         }
     }
 
@@ -445,60 +458,72 @@ public partial class MainWindow : Window
     {
         var card = new StackPanel { Spacing = 6 };
 
-        var head = new StackPanel { Orientation = Orientation.Horizontal };
-        head.Children.Add(new TextBlock
+        card.Children.Add(new DockPanel
         {
-            Text = info.Label, FontWeight = FontWeight.Bold,
-            VerticalAlignment = VerticalAlignment.Center,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = info.SizeText, Foreground = SubtleBrush, FontSize = 12,
+                    VerticalAlignment = VerticalAlignment.Center,
+                }.With(s => DockPanel.SetDock(s, Dock.Right)),
+                new TextBlock
+                {
+                    Text = info.Label, FontWeight = FontWeight.Bold, FontSize = 15,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            },
         });
-        head.Children.Add(new TextBlock
-        {
-            Text = info.SizeText, Foreground = Brushes.Gray, FontSize = 12,
-            VerticalAlignment = VerticalAlignment.Center, Margin = new Avalonia.Thickness(10, 0, 0, 0),
-        });
-        card.Children.Add(head);
         card.Children.Add(new TextBlock
         {
-            Text = info.Tagline, Foreground = Brushes.SteelBlue, FontSize = 12,
+            Text = info.Tagline, Foreground = PrimaryBrush, FontSize = 12,
         });
         foreach (var p in info.Pros)
             card.Children.Add(new TextBlock { Text = "✓  " + p, FontSize = 12 });
         foreach (var c in info.Cons)
             card.Children.Add(new TextBlock
             {
-                Text = "✗  " + c, FontSize = 12, Foreground = Brushes.Gray,
+                Text = "–  " + c, FontSize = 12, Foreground = SubtleBrush,
             });
 
+        var actionsRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
         if (isCurrent)
         {
-            card.Children.Add(new TextBlock
+            actionsRow.Children.Add(new TextBlock
             {
-                Text = "✓ Aktiv", FontWeight = FontWeight.Bold, Foreground = Brushes.Green,
+                Text = "✓ Aktiv", FontWeight = FontWeight.Bold, Foreground = TertiaryBrush,
+                VerticalAlignment = VerticalAlignment.Center,
             });
+            card.Children.Add(actionsRow);
             return card;
         }
 
-        var action = new Button();
         if (isLocal)
         {
-            action.Content = "Aktivieren (bereits geladen)";
-            action.Click += (_, _) => Activate(info.File);
+            var act = new Button { Content = "Aktivieren", Classes = { "primaryAction" } };
+            act.Click += (_, _) => Activate(info.File);
+            var del = new Button { Content = "Löschen", Classes = { "chip" }, Foreground = ErrorBrush };
+            del.Click += async (_, _) =>
+            {
+                if (!await Confirm("Modell löschen?", $"„{info.Label}“ wird vom Rechner entfernt und kann jederzeit neu geladen werden.")) return;
+                try { File.Delete(Path.Combine(WhisperCli.ModelsDir, info.File)); } catch { }
+                BuildPickerList();
+            };
+            actionsRow.Children.Add(act);
+            actionsRow.Children.Add(del);
         }
         else
         {
-            action.Content = $"⬇  Herunterladen ({info.SizeText})";
-            action.IsEnabled = downloading == null;
-            action.Click += async (_, _) => await DownloadAsync(info);
+            var dl = new Button
+            {
+                Content = $"⬇  Herunterladen ({info.SizeText})",
+                Classes = { "chip" },
+                IsEnabled = downloading == null,
+            };
+            dl.Click += async (_, _) => await DownloadAsync(info);
+            actionsRow.Children.Add(dl);
         }
-        card.Children.Add(action);
-
-        var progress = new ProgressBar
-        {
-            Minimum = 0, Maximum = 1, Value = 0, Height = 14, IsVisible = false,
-        };
-        var progressLabel = new TextBlock { Text = "", IsVisible = false, FontSize = 12 };
-        card.Children.Add(progress);
-        card.Children.Add(progressLabel);
+        card.Children.Add(actionsRow);
         return card;
     }
 
@@ -518,7 +543,7 @@ public partial class MainWindow : Window
                 if (v - lastReport > 0.005)
                 {
                     lastReport = v;
-                    PickerError.Text = ""; // keine Fehler während des Laufs
+                    PickerError.Text = "";
                     SetDownloadStatus(info, v);
                 }
             });
@@ -553,6 +578,7 @@ public partial class MainWindow : Window
                 Text = $"Lade {info.Label} … {v * 100:F0} %",
                 Tag = "dl",
                 FontWeight = FontWeight.Bold,
+                Foreground = PrimaryBrush,
             };
             PickerList.Children.Insert(0, status);
         }
@@ -603,7 +629,7 @@ public partial class MainWindow : Window
         if (UpdateChecker.IsNewer(current, release.Tag))
         {
             pendingUpdate = release;
-            UpdateButton.Content = $"⬆  Update auf {release.Tag}";
+            UpdateButton.Content = $"⬆  Update ({release.Tag})";
             UpdateButton.IsVisible = true;
             if (!silent)
                 StatusLabel.Text = $"Update verfügbar: {release.Tag} (installiert: {current})";
@@ -662,7 +688,7 @@ public partial class MainWindow : Window
                 "🎙  Sprache zu Text: Mikrofonaufnahmen in Sekunden transkribieren",
                 "📄  Dateien: Audio- und Videodateien in Text umwandeln",
                 "⌨️  Diktat-Modus: per Hotkey (Standard: Strg+Alt+Leertaste) in jedes Textfeld",
-                "🕘  Verlauf: alle Transkriptionen bleiben abrufbar",
+                "🕓  Verlauf: alle Transkriptionen bleiben abrufbar",
                 "🌐  Sprachen: Deutsch, English oder automatisch",
             }, null),
         new("Deine Vorteile",
@@ -699,7 +725,7 @@ public partial class MainWindow : Window
         OnboardingIntro.IsVisible = p.Intro != null;
         OnboardingBullets.Children.Clear();
         foreach (var b in p.Bullets)
-            OnboardingBullets.Children.Add(new TextBlock { Text = "•  " + b, TextWrapping = TextWrapping.Wrap });
+            OnboardingBullets.Children.Add(new TextBlock { Text = "•  " + b, TextWrapping = TextWrapping.Wrap, FontSize = 14 });
         OnboardingFooter.Text = p.Footer ?? "";
         OnboardingFooter.IsVisible = p.Footer != null;
         OnboardingNextButton.Content = onboardingPage == OnboardingPages.Length - 1 ? "Los geht's" : "Weiter";
@@ -784,7 +810,7 @@ public partial class MainWindow : Window
             var srcDir = await Task.Run(() => SelfUpdater.DownloadAndExtractAsync(release.ZipUrl, release.SigUrl, progress));
             StatusLabel.Text = "Installation wird angewendet — App startet neu…";
             SelfUpdater.LaunchUpdater(srcDir);
-            await Task.Delay(400); // Skript-Start abwarten
+            await Task.Delay(400);
             allowClose = true;
             tray?.Dispose();
             Close();
@@ -984,7 +1010,6 @@ public partial class MainWindow : Window
     private void OnClearClick(object? sender, RoutedEventArgs e) => TranscriptBox.Text = "";
 
     // ---------- Teilen ----------
-
     private void OnShareClick(object? sender, RoutedEventArgs e) { } // öffnet nur das Flyout
 
     /// WhatsApp mit vorbefülltem Text (wa.me-Link öffnet die Desktop-App).

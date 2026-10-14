@@ -2,8 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="WhisperOffline.MainWindow"
         Title="Scheisssewasser's Whisper"
-        Width="860" Height="720"
-        MinWidth="560" MinHeight="560"
+        Width="820" Height="700"
+        MinWidth="640" MinHeight="520"
         Background="{DynamicResource BrandSurfaceBrush}"
         xmlns:local="using:WhisperOffline"
         WindowStartupLocation="CenterScreen">
@@ -109,7 +109,7 @@
                                      Height="6" MinWidth="0" VerticalAlignment="Center" />
                         <TextBlock x:Name="WorkDetail" Grid.Column="1" Margin="12,0,0,0" FontSize="12"
                                    Foreground="{DynamicResource BrandSubtleTextBrush}" VerticalAlignment="Center" />
-                        <Button x:Name="WorkCancelButton" Grid.Column="2" Content="Abbrechen"
+                        <Button x:Name="WorkCancelButton" Grid.Column="2" Classes="chip" Content="Abbrechen"
                                 Margin="12,0,0,0" Click="OnWorkCancel" />
                     </Grid>
                 </StackPanel>

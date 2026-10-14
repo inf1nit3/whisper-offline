@@ -7,7 +7,6 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
-using Avalonia.Threading;
 
 namespace WhisperOffline;
 
@@ -35,12 +34,12 @@ public partial class MainWindow
 
     private void ShowBatch()
     {
-        var list = new StackPanel { Spacing = 4 };
+        var list = new StackPanel { Spacing = 8 };
         foreach (var it in batch)
         {
-            var remove = new Button { Content = "✕", FontSize = 11, IsEnabled = !batchRunning || it.State != "läuft" };
+            var remove = new Button { Content = "✕", Classes = { "chip" }, FontSize = 11, IsEnabled = !batchRunning || it.State != "läuft" };
             remove.Click += (_, _) => { batch.Remove(it); ShowBatch(); };
-            list.Children.Add(new DockPanel
+            list.Children.Add(Card(new DockPanel
             {
                 Children =
                 {
@@ -50,14 +49,14 @@ public partial class MainWindow
                         Text = $"{(it.State switch { "fertig" => "✓", "fehlgeschlagen" => "✗", "läuft" => "▶", "übersprungen" => "–", _ => "·" })}  {Path.GetFileName(it.Path)}" +
                                (it.Error != null ? $"  — {it.Error}" : it.State is "wartet" ? "" : $"  ({it.State})"),
                         VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
-                        Foreground = it.State == "fehlgeschlagen" ? Brushes.IndianRed : null,
+                        Foreground = it.State == "fehlgeschlagen" ? ErrorBrush : it.State == "fertig" ? TertiaryBrush : null,
                     },
                 },
-            });
+            }));
         }
-        if (batch.Count == 0) list.Children.Add(Hint("Noch keine Dateien — „Dateien hinzufügen“ oder hierher ziehen."));
+        if (batch.Count == 0) list.Children.Add(Card(Hint("Noch keine Dateien — „Dateien hinzufügen“ klicken oder Dateien direkt hierher ziehen.")));
 
-        var add = new Button { Content = "Dateien hinzufügen …" };
+        var add = new Button { Content = "+ Dateien hinzufügen …", Classes = { "chip" } };
         add.Click += async (_, _) =>
         {
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -67,44 +66,49 @@ public partial class MainWindow
             });
             AddBatchFiles(files.Select(f => f.TryGetLocalPath()).Where(p => p != null)!);
         };
-        var clear = new Button { Content = "Liste leeren", IsEnabled = !batchRunning };
+        var clear = new Button { Content = "Liste leeren", Classes = { "chip" }, IsEnabled = !batchRunning && batch.Count > 0 };
         clear.Click += (_, _) => { batch.Clear(); ShowBatch(); };
-        var retry = new Button { Content = "Fehlgeschlagene wiederholen", IsEnabled = !batchRunning && batch.Any(b => b.State == "fehlgeschlagen") };
+        var retry = new Button { Content = "Fehlgeschlagene wiederholen", Classes = { "chip" }, IsEnabled = !batchRunning && batch.Any(b => b.State == "fehlgeschlagen") };
         retry.Click += (_, _) => { foreach (var b in batch.Where(b => b.State == "fehlgeschlagen")) { b.State = "wartet"; b.Error = null; } ShowBatch(); };
-        var target = new TextBlock { Text = batchTarget.Length > 0 ? "Zielordner: " + batchTarget : "Zielordner: noch nicht gewählt", VerticalAlignment = VerticalAlignment.Center };
-        var choose = new Button { Content = "Zielordner wählen …" };
+        var target = new TextBlock { Text = batchTarget.Length > 0 ? "Zielordner: " + batchTarget : "Zielordner: noch nicht gewählt", VerticalAlignment = VerticalAlignment.Center, Foreground = SubtleBrush, FontSize = 12 };
+        var choose = new Button { Content = "📂 Zielordner wählen …", Classes = { "chip" } };
         choose.Click += async (_, _) =>
         {
             var dirs = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Wo sollen die Transkripte hin?" });
             var d = dirs.FirstOrDefault()?.TryGetLocalPath();
             if (d != null) { batchTarget = d; ShowBatch(); }
         };
-        var start = new Button { Content = batchRunning ? "Abbrechen" : "▶  Starten", IsEnabled = batchRunning || batch.Any(b => b.State == "wartet") };
+        var start = new Button
+        {
+            Content = batchRunning ? "Abbrechen" : "▶  Stapel starten",
+            Classes = { batchRunning ? "chip" : "primaryAction" },
+            IsEnabled = batchRunning || batch.Any(b => b.State == "wartet"),
+        };
         start.Click += (_, _) =>
         {
             if (batchRunning) { batchCts?.Cancel(); WhisperNative.Cancel(); return; }
             if (batchTarget.Length == 0) { batchStatus = "Bitte zuerst einen Zielordner wählen."; ShowBatch(); return; }
             _ = RunBatchAsync();
         };
-        var open = new Button { Content = "Ordner öffnen", IsEnabled = batchTarget.Length > 0 };
+        var open = new Button { Content = "Ordner öffnen", Classes = { "chip" }, IsEnabled = batchTarget.Length > 0 };
         open.Click += (_, _) => OpenExternalPath(batchTarget);
-        var statusText = new TextBlock { Text = batchStatus, TextWrapping = TextWrapping.Wrap, FontWeight = FontWeight.SemiBold };
+        var statusText = new TextBlock { Text = batchStatus, TextWrapping = TextWrapping.Wrap, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
 
         var content = new DockPanel
         {
             Children =
             {
-                new StackPanel
+                Card(new StackPanel
                 {
-                    Spacing = 8, Margin = new Thickness(0, 0, 0, 10),
+                    Spacing = 10,
                     Children =
                     {
                         new WrapPanel { ItemSpacing = 8, LineSpacing = 6, Children = { add, clear, retry } },
-                        new WrapPanel { ItemSpacing = 8, LineSpacing = 6, Children = { choose, target, open } },
-                        new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { start, statusText } },
+                        new WrapPanel { ItemSpacing = 8, LineSpacing = 6, Children = { choose, open, target } },
+                        new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { start, statusText } },
                         Hint("Je Datei entsteht eine gleichnamige .txt. Läuft ein Diktat, pausiert der Stapel und macht danach weiter."),
                     },
-                }.With(s => DockPanel.SetDock(s, Dock.Top)),
+                }).With(s => { s.Margin = new Thickness(0, 0, 0, 12); DockPanel.SetDock(s, Dock.Top); }),
                 Scroll(list),
             },
         };

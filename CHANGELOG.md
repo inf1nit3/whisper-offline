@@ -1,5 +1,26 @@
 # Changelog
 
+## v3.4
+
+Feinschliff fürs neue Design — jetzt auch in allen Unterseiten.
+
+**Windows**
+- Einstellungen, Wörterbuch, Statistik, Verlauf, Meeting, Stapel,
+  Sprachmodelle und App-Profile im Karten-Stil mit runden Knöpfen
+- Wörterbuch: Wörter filtern; neue Wörter stehen oben
+- Modellauswahl: heruntergeladene Modelle lassen sich löschen; das aktive
+  Modell ist farbig umrandet
+- Statistik: Balkendiagramm passt sich der Fensterbreite an
+- Dialoge (Löschen, System-Prompt, Sprecher benennen) und „Auswahl
+  bearbeiten“ im neuen Design, auch im dunklen Modus
+- Verlauf: Text lässt sich markieren und kopieren
+
+**Android**
+- Verlauf zeigt die Quelle (Diktat, Datei, Meeting, Umgeformt)
+- Wörterbuch: Wörter filtern (ab 9 Einträgen); neue Wörter stehen oben
+- Ersetzungen: Regeln filtern (ab 7 Regeln)
+- Transkript leeren auch während einer laufenden Transkription
+
 ## v3.3
 
 Neues Design — Windows und Android sehen jetzt gleich aus.

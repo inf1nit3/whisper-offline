@@ -248,7 +248,7 @@ fun PromptEditorDialog(onDismiss: () -> Unit) {
 }
 
 // ---------------------------------------------------------------------------
-// Wörterbuch: eigene Wörter, Ersetzungen, Snippets
+// Wörterbuch: eigene Wörter, Ersetzungen, Snippets (mit Live-Filter)
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -277,10 +277,15 @@ fun DictionaryOverlay(onClose: () -> Unit) {
 @Composable
 private fun WordsContent(words: List<String>, onChange: (List<String>) -> Unit) {
     var input by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf("") }
+    val filtered = remember(words, filter) {
+        val q = filter.trim()
+        if (q.isEmpty()) words else words.filter { it.contains(q, ignoreCase = true) }
+    }
     fun add() {
         val w = input.trim()
         if (w.isEmpty()) return
-        onChange(words + w)
+        onChange(listOf(w) + words)
         input = ""
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
@@ -301,8 +306,27 @@ private fun WordsContent(words: List<String>, onChange: (List<String>) -> Unit) 
                 Icon(Icons.Filled.Add, contentDescription = "Wort hinzufügen")
             }
         }
-        Text("${words.size} Wörter", style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(vertical = 8.dp))
+        if (words.size > 8) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = filter, onValueChange = { filter = it },
+                placeholder = { Text("Wörter filtern …") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (filter.isNotEmpty()) IconButton(onClick = { filter = "" }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Filter zurücksetzen")
+                    }
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.extraLarge,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Text(
+            if (filter.isBlank()) "${words.size} Wörter" else "${filtered.size} von ${words.size} Wörtern",
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(vertical = 8.dp),
+        )
         if (words.isEmpty()) {
             EmptyState(Icons.Filled.Spellcheck, "Noch keine eigenen Wörter",
                 "Typische Kandidaten: Namen, Firmen, Produkte, Fachbegriffe.")
@@ -313,7 +337,7 @@ private fun WordsContent(words: List<String>, onChange: (List<String>) -> Unit) 
             }
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-            items(words) { w ->
+            items(filtered, key = { it }) { w ->
                 ListItem(
                     headlineContent = { Text(w) },
                     trailingContent = {
@@ -432,7 +456,7 @@ fun StatsOverlay(onClose: () -> Unit) {
                         stats.languages.forEach { (lang, n) ->
                             Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
                                 Text(languageLabel(lang), Modifier.weight(1f))
-                                Text("$n×", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${n}×", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

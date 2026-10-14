@@ -33,32 +33,34 @@ public sealed class TransformWindow : Window
     public TransformWindow(string selectedText, Func<bool>? startDictation, Func<Task<string?>>? stopDictation)
     {
         Title = "Auswahl bearbeiten";
-        Width = 460;
+        Width = 480;
         SizeToContent = SizeToContent.Height;
         Topmost = true;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        if (Application.Current?.TryFindResource("BrandSurfaceBrush", Application.Current.ActualThemeVariant, out var bg) == true && bg is IBrush bBrush)
+            Background = bBrush;
 
         var preview = new TextBlock
         {
             Text = selectedText.Length > 240 ? selectedText[..240] + " …" : selectedText,
-            TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Brushes.Gray, MaxLines = 4,
+            TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.78, MaxLines = 4,
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
         var actions = new WrapPanel { ItemSpacing = 6, LineSpacing = 6 };
         foreach (var (key, label) in TransformActions.All)
         {
-            var b = new Button { Content = label };
+            var b = new Button { Content = label, Classes = { "chip" } };
             b.Click += (_, _) => Finish((TransformActions.Instruction(key, selectedText), label.TrimStart('✨', ' ')));
             actions.Children.Add(b);
         }
         var custom = new TextBox { Watermark = "Eigene Anweisung, z. B. „als freundliche Absage“", MaxLength = 1000 };
-        var go = new Button { Content = "Anwenden", IsDefault = true };
+        var go = new Button { Content = "Anwenden", Classes = { "primaryAction" }, IsDefault = true };
         go.Click += (_, _) =>
         {
             if (!string.IsNullOrWhiteSpace(custom.Text)) Finish((custom.Text.Trim(), "Eigene Anweisung"));
         };
-        var mic = new Button { Content = "🎙", IsVisible = startDictation != null && stopDictation != null };
+        var mic = new Button { Content = "🎙", Classes = { "chip" }, IsVisible = startDictation != null && stopDictation != null };
         ToolTip.SetTip(mic, "Anweisung diktieren (nochmal klicken zum Beenden)");
         bool listening = false;
         mic.Click += async (_, _) =>
@@ -81,33 +83,37 @@ public sealed class TransformWindow : Window
             if (!string.IsNullOrWhiteSpace(said)) { custom.Text = said; Finish((said.Trim(), "Eigene Anweisung")); }
             else custom.Watermark = "Nicht verstanden — tippen oder nochmal sprechen";
         };
-        var cancel = new Button { Content = "Abbrechen", IsCancel = true };
+        var cancel = new Button { Content = "Abbrechen", Classes = { "chip" }, IsCancel = true };
         cancel.Click += (_, _) => Finish(null);
 
-        Content = new StackPanel
+        Content = new Border
         {
             Margin = new Thickness(16),
-            Spacing = 10,
-            Children =
+            Classes = { "card" },
+            Child = new StackPanel
             {
-                new TextBlock { Text = "Markierter Text", FontWeight = FontWeight.SemiBold },
-                preview,
-                actions,
-                new DockPanel
+                Spacing = 12,
+                Children =
                 {
-                    Children =
+                    new TextBlock { Text = "Markierter Text", FontWeight = FontWeight.SemiBold, FontSize = 15 },
+                    preview,
+                    actions,
+                    new DockPanel
                     {
-                        new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { mic, go } }
-                            .With(p => DockPanel.SetDock(p, Dock.Right)),
-                        custom,
+                        Children =
+                        {
+                            new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(6, 0, 0, 0), Children = { mic, go } }
+                                .With(p => DockPanel.SetDock(p, Dock.Right)),
+                            custom,
+                        },
                     },
+                    new TextBlock
+                    {
+                        Text = "Das Ergebnis ersetzt die Auswahl. Mit Strg+Z in der Ziel-App rückgängig machen.",
+                        FontSize = 11, Opacity = 0.7, TextWrapping = TextWrapping.Wrap,
+                    },
+                    cancel.With(c => c.HorizontalAlignment = HorizontalAlignment.Right),
                 },
-                new TextBlock
-                {
-                    Text = "Das Ergebnis ersetzt die Auswahl. Mit Strg+Z in der Ziel-App rückgängig machen.",
-                    FontSize = 11, Foreground = Brushes.Gray, TextWrapping = TextWrapping.Wrap,
-                },
-                cancel.With(c => c.HorizontalAlignment = HorizontalAlignment.Right),
             },
         };
         Closed += (_, _) => result.TrySetResult(null);

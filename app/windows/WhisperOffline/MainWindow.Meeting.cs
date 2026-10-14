@@ -42,14 +42,18 @@ public partial class MainWindow
 
         var p = new StackPanel { Spacing = 10, Margin = new Thickness(0, 0, 12, 12) };
         var title = new TextBox { Watermark = "Titel (optional)", MinWidth = 360 };
-        var count = new ComboBox { MinWidth = 140 };
+        var count = new ComboBox { MinWidth = 140, CornerRadius = new CornerRadius(14) };
         count.Items.Add("automatisch");
         for (int i = 2; i <= 8; i++) count.Items.Add(i.ToString());
         count.SelectedIndex = 0;
-        var source = new ComboBox { Items = { "Mikrofon + Systemaudio (Call)", "Nur Mikrofon (Raum)", "Nur Systemaudio" } };
+        var source = new ComboBox
+        {
+            Items = { "Mikrofon + Systemaudio (Call)", "Nur Mikrofon (Raum)", "Nur Systemaudio" },
+            CornerRadius = new CornerRadius(14),
+        };
         source.SelectedIndex = settings.MeetingSource switch { "mic" => 1, "system" => 2, _ => 0 };
-        var start = new Button { Content = "🔴  Aufnahme starten", FontSize = 15, Padding = new Thickness(18, 8) };
-        var error = new TextBlock { Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap };
+        var start = new Button { Content = "🔴  Aufnahme starten", Classes = { "primaryAction" }, HorizontalAlignment = HorizontalAlignment.Left };
+        var error = new TextBlock { Foreground = ErrorBrush, TextWrapping = TextWrapping.Wrap };
         start.Click += (_, _) =>
         {
             if (!File.Exists(WhisperCli.SelectedModel)) { error.Text = "Erst ein Modell laden."; return; }
@@ -78,20 +82,27 @@ public partial class MainWindow
         };
         p.Children.Add(Card(new StackPanel
         {
-            Spacing = 10,
+            Spacing = 12,
             Children =
             {
                 title,
-                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new TextBlock { Text = "Quelle:", VerticalAlignment = VerticalAlignment.Center }, source,
-                    new TextBlock { Text = "Sprecher:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) }, count } },
-                Hint("Bei Calls Kopfhörer benutzen — sonst landet die Gegenseite zusätzlich im Mikrofon. Mit „Mikrofon + Systemaudio“ wirst du als „Ich“ geführt, die Gegenseite wird nach Sprechern getrennt."),
-                Diarizer.Available ? Hint("✓ Sprechererkennung bereit.") : new StackPanel
+                new WrapPanel
                 {
-                    Spacing = 4,
+                    ItemSpacing = 8, LineSpacing = 8,
+                    Children =
+                    {
+                        new TextBlock { Text = "Quelle:", VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.Medium }, source,
+                        new TextBlock { Text = "Sprecher:", VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.Medium, Margin = new Thickness(12, 0, 0, 0) }, count,
+                    },
+                },
+                Hint("Bei Calls Kopfhörer benutzen — sonst landet die Gegenseite zusätzlich im Mikrofon. Mit „Mikrofon + Systemaudio“ wirst du als „Ich“ geführt, die Gegenseite wird nach Sprechern getrennt."),
+                Diarizer.Available ? new TextBlock { Text = "✓ Sprechererkennung bereit", FontSize = 12, Foreground = TertiaryBrush } : new StackPanel
+                {
+                    Spacing = 6,
                     Children =
                     {
                         Hint("Ohne Sprechererkennung werden die Sprecher nicht getrennt."),
-                        new Button { Content = "Sprechererkennung laden (28 MB) …" }.With(b => b.Click += (_, _) => { panelBack = ShowMeeting; ShowMeetingModels(); }),
+                        new Button { Content = "Sprechererkennung laden (28 MB) …", Classes = { "chip" } }.With(b => b.Click += (_, _) => { panelBack = ShowMeeting; ShowMeetingModels(); }),
                     },
                 },
                 start, error,
@@ -105,17 +116,17 @@ public partial class MainWindow
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             if (m.State == "done")
             {
-                var open = new Button { Content = "Öffnen" };
+                var open = new Button { Content = "Öffnen", Classes = { "chip" } };
                 open.Click += (_, _) => { panelBack = ShowMeeting; ShowMeetingResult(m.Id); };
                 row.Children.Add(open);
             }
             else
             {
-                var proc = new Button { Content = "Auswerten" };
+                var proc = new Button { Content = "Auswerten", Classes = { "primaryAction" } };
                 proc.Click += (_, _) => StartMeetingProcessing(m.Id);
                 row.Children.Add(proc);
             }
-            var del = new Button { Content = "Löschen" };
+            var del = new Button { Content = "✕", Classes = { "chip" }, Foreground = ErrorBrush };
             del.Click += async (_, _) =>
             {
                 if (await Confirm("Meeting löschen?", $"„{m.Title}“ wird mit Aufnahme und Transkript gelöscht.")) { MeetingStore.Delete(m.Id); ShowMeeting(); }
@@ -128,6 +139,7 @@ public partial class MainWindow
                     row.With(r => DockPanel.SetDock(r, Dock.Right)),
                     new StackPanel
                     {
+                        Spacing = 2,
                         Children =
                         {
                             new TextBlock { Text = m.Title, FontWeight = FontWeight.SemiBold },
@@ -163,18 +175,18 @@ public partial class MainWindow
 
     private void ShowMeetingRecording()
     {
-        var clock = new TextBlock { FontSize = 40, FontWeight = FontWeight.SemiBold, HorizontalAlignment = HorizontalAlignment.Center };
-        var level = new ProgressBar { Minimum = 0, Maximum = 1, Height = 6, Width = 300, Foreground = Brushes.IndianRed };
+        var clock = new TextBlock { FontSize = 42, FontWeight = FontWeight.Bold, HorizontalAlignment = HorizontalAlignment.Center };
+        var level = new ProgressBar { Minimum = 0, Maximum = 1, Height = 6, Width = 320, Foreground = ErrorBrush };
         var live = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 13 };
-        var state = new TextBlock { HorizontalAlignment = HorizontalAlignment.Center };
-        var pause = new Button();
-        var finish = new Button { Content = "⏹  Beenden & auswerten" };
-        var discard = new Button { Content = "Verwerfen" };
+        var state = new TextBlock { HorizontalAlignment = HorizontalAlignment.Center, FontWeight = FontWeight.Medium };
+        var pause = new Button { Classes = { "chip" } };
+        var finish = new Button { Content = "⏹  Beenden & auswerten", Classes = { "primaryAction" } };
+        var discard = new Button { Content = "Verwerfen", Classes = { "chip" }, Foreground = ErrorBrush };
         void Refresh()
         {
             pause.Content = meetingPaused ? "▶  Fortsetzen" : "⏸  Pause";
             state.Text = meetingPaused ? "Pausiert" : "Aufnahme läuft";
-            clock.Foreground = meetingPaused ? Brushes.Gray : Brushes.IndianRed;
+            clock.Foreground = meetingPaused ? SubtleBrush : ErrorBrush;
         }
         pause.Click += (_, _) =>
         {
@@ -226,12 +238,19 @@ public partial class MainWindow
         meetingTimer.Start();
         ShowPanel("Meeting", MeetingStore.Load(meetingId!)?.Title, new StackPanel
         {
-            Spacing = 12,
+            Spacing = 14,
             Children =
             {
-                clock, state, level.With(l => l.HorizontalAlignment = HorizontalAlignment.Center),
-                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center, Children = { pause, finish, discard } },
-                Hint("Diktat-Hotkeys ruhen während der Aufnahme. Das Fenster darf in den Infobereich — die Aufnahme läuft weiter."),
+                Card(new StackPanel
+                {
+                    Spacing = 12, HorizontalAlignment = HorizontalAlignment.Stretch,
+                    Children =
+                    {
+                        clock, state, level.With(l => l.HorizontalAlignment = HorizontalAlignment.Center),
+                        new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center, Children = { pause, finish, discard } },
+                        Hint("Diktat-Hotkeys ruhen während der Aufnahme. Das Fenster darf in den Infobereich — die Aufnahme läuft weiter.").With(h => h.HorizontalAlignment = HorizontalAlignment.Center),
+                    },
+                }),
                 Card(Scroll(live).With(s => s.MaxHeight = 260)),
             },
         });
@@ -273,8 +292,8 @@ public partial class MainWindow
     private void ShowMeetingProcessing()
     {
         var bar = new ProgressBar { Minimum = 0, Maximum = 1, Height = 8, MinWidth = 420 };
-        var detail = new TextBlock { HorizontalAlignment = HorizontalAlignment.Center };
-        var cancel = new Button { Content = "Abbrechen", HorizontalAlignment = HorizontalAlignment.Center };
+        var detail = new TextBlock { HorizontalAlignment = HorizontalAlignment.Center, FontWeight = FontWeight.Medium };
+        var cancel = new Button { Content = "Abbrechen", Classes = { "chip" }, HorizontalAlignment = HorizontalAlignment.Center };
         cancel.Click += (_, _) => { meetingCts?.Cancel(); WhisperNative.Cancel(); };
         meetingTimer?.Stop();
         meetingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
@@ -285,11 +304,11 @@ public partial class MainWindow
             if (meetingProgressValue is { } v) bar.Value = v;
         };
         meetingTimer.Start();
-        ShowPanel("Meeting wird ausgewertet", "Sprechererkennung und Transkription laufen lokal", new StackPanel
+        ShowPanel("Meeting wird ausgewertet", "Sprechererkennung und Transkription laufen lokal", Card(new StackPanel
         {
-            Spacing = 14, Margin = new Thickness(0, 30, 0, 0),
+            Spacing = 14, Margin = new Thickness(0, 16),
             Children = { bar.With(b => b.HorizontalAlignment = HorizontalAlignment.Center), detail, cancel },
-        });
+        }));
     }
 
     private void ShowMeetingResult(string id, string query = "", bool notesTab = false)
@@ -304,30 +323,35 @@ public partial class MainWindow
             for (int i = 0; i < m.Speakers.Count; i++)
             {
                 int idx = i;
-                var b = new Button { Content = (m.Speakers[i].Recognized ? "✓ " : "") + $"{m.Speakers[i].Name} · {(talk.GetValueOrDefault(i) / total * 100):F0} %" };
+                var b = new Button
+                {
+                    Content = (m.Speakers[i].Recognized ? "✓ " : "👤 ") + $"{m.Speakers[i].Name} · {(talk.GetValueOrDefault(i) / total * 100):F0} %",
+                    Classes = { "chip" },
+                };
                 ToolTip.SetTip(b, "Umbenennen oder zusammenführen");
                 b.Click += async (_, _) => { await RenameSpeaker(m, idx); ShowMeetingResult(id, query, notesTab); };
                 speakers.Children.Add(b);
             }
 
-        var search = new TextBox { Text = query, Watermark = "Transkript durchsuchen", MinWidth = 260 };
+        var search = new TextBox { Text = query, Watermark = "Transkript durchsuchen …", MinWidth = 260 };
         search.KeyUp += (_, ev) => { if (ev.Key == Avalonia.Input.Key.Enter) ShowMeetingResult(id, search.Text?.Trim() ?? "", false); };
-        var transcript = new StackPanel { Spacing = 8 };
+        var transcript = new StackPanel { Spacing = 10 };
         foreach (var u in m.Utterances.Where(u => query.Length == 0 || u.Text.Contains(query, StringComparison.OrdinalIgnoreCase)))
-            transcript.Children.Add(new StackPanel
+            transcript.Children.Add(Card(new StackPanel
             {
+                Spacing = 4,
                 Children =
                 {
                     new TextBlock { Text = (m.Diarized ? m.SpeakerName(u.Speaker) + " · " : "") + TimeSpan.FromSeconds(u.Start).ToString(@"h\:mm\:ss"),
-                        Foreground = Brushes.SteelBlue, FontSize = 12, FontWeight = FontWeight.SemiBold },
+                        Foreground = PrimaryBrush, FontSize = 12, FontWeight = FontWeight.SemiBold },
                     new SelectableTextBlock { Text = u.Text, TextWrapping = TextWrapping.Wrap },
                 },
-            });
-        if (transcript.Children.Count == 0) transcript.Children.Add(Hint("Keine Treffer."));
+            }));
+        if (transcript.Children.Count == 0) transcript.Children.Add(Card(Hint("Keine Treffer.")));
 
-        var notesBox = new StackPanel { Spacing = 8 };
+        var notesBox = new StackPanel { Spacing = 10 };
         var notesStatus = Hint("");
-        var gen = new Button { Content = m.Notes.Length > 0 ? "Neu erstellen" : "✨ Notizen erstellen", IsEnabled = Enhancer.IsConfigured(settings) };
+        var gen = new Button { Content = m.Notes.Length > 0 ? "✨ Neu erstellen" : "✨ Notizen erstellen", Classes = { "primaryAction" }, IsEnabled = Enhancer.IsConfigured(settings) };
         gen.Click += async (_, _) =>
         {
             gen.IsEnabled = false;
@@ -338,10 +362,10 @@ public partial class MainWindow
             if (o.Text != null) { m.Notes = o.Text; MeetingStore.Save(m); ShowMeetingResult(id, "", true); }
             else { notesStatus.Text = "Fehlgeschlagen: " + o.Error; gen.IsEnabled = true; }
         };
-        if (m.Notes.Length > 0) notesBox.Children.Add(new SelectableTextBlock { Text = m.Notes, TextWrapping = TextWrapping.Wrap });
-        else notesBox.Children.Add(Hint(Enhancer.IsConfigured(settings)
+        if (m.Notes.Length > 0) notesBox.Children.Add(Card(new SelectableTextBlock { Text = m.Notes, TextWrapping = TextWrapping.Wrap }));
+        else notesBox.Children.Add(Card(Hint(Enhancer.IsConfigured(settings)
             ? "Macht aus dem Transkript eine Zusammenfassung mit Entscheidungen, Aufgaben und offenen Fragen."
-            : "Für Notizen braucht es ein Sprachmodell (Einstellungen → Enhance)."));
+            : "Für Notizen braucht es ein Sprachmodell (Einstellungen → Enhance).")));
         notesBox.Children.Add(gen);
         notesBox.Children.Add(notesStatus);
 
@@ -360,13 +384,13 @@ public partial class MainWindow
         });
         tabs.Items.Add(new TabItem { Header = "Notizen", Content = Scroll(notesBox.With(n => n.Margin = new Thickness(0, 8, 12, 8))) });
 
-        var copy = new Button { Content = "Alles kopieren" };
+        var copy = new Button { Content = "📋 Kopieren", Classes = { "chip" } };
         copy.Click += async (_, _) => { if (Clipboard != null) await Clipboard.SetTextAsync(MeetingText(m)); };
-        var md = new Button { Content = "Markdown …" };
+        var md = new Button { Content = "Markdown …", Classes = { "chip" } };
         md.Click += async (_, _) => await ExportMeeting(m, "md");
-        var pdf = new Button { Content = "PDF …" };
+        var pdf = new Button { Content = "PDF …", Classes = { "chip" } };
         pdf.Click += async (_, _) => await ExportMeeting(m, "pdf");
-        var folder = new Button { Content = "Aufnahme zeigen" };
+        var folder = new Button { Content = "📂 Ordner", Classes = { "chip" } };
         folder.Click += (_, _) => OpenExternalPath(MeetingStore.Folder(id));
 
         ShowPanel(m.Title, DateTimeOffset.FromUnixTimeMilliseconds(m.StartedMs).LocalDateTime.ToString("dd.MM.yyyy HH:mm") +
@@ -414,8 +438,13 @@ public partial class MainWindow
     {
         var name = new TextBox { Text = m.SpeakerName(idx).StartsWith("Sprecher ") ? "" : m.SpeakerName(idx), Watermark = "Name" };
         var remember = new CheckBox { Content = "Stimme merken — in künftigen Meetings automatisch zuordnen", IsChecked = idx != 0 || m.SpeakerName(0) != "Ich" };
-        var w = new Window { Title = "Sprecher benennen", Width = 420, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false };
-        var save = new Button { Content = "Speichern", IsDefault = true };
+        var w = new Window
+        {
+            Title = "Sprecher benennen", Width = 440, SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false,
+            Background = BrandBrush("BrandSurfaceBrush", Brushes.White),
+        };
+        var save = new Button { Content = "Speichern", Classes = { "primaryAction" }, IsDefault = true };
         var merges = new WrapPanel { ItemSpacing = 6, LineSpacing = 6 };
         save.Click += (_, _) =>
         {
@@ -434,7 +463,7 @@ public partial class MainWindow
         {
             if (i == idx) continue;
             int into = i;
-            var b = new Button { Content = m.Speakers[i].Name };
+            var b = new Button { Content = m.Speakers[i].Name, Classes = { "chip" } };
             b.Click += (_, _) =>
             {
                 m.Utterances = m.Utterances.Select(u => u.Speaker == idx ? u with { Speaker = into } : u)
@@ -448,15 +477,20 @@ public partial class MainWindow
             };
             merges.Children.Add(b);
         }
-        w.Content = new StackPanel
+        w.Content = new Border
         {
-            Margin = new Thickness(16), Spacing = 10,
-            Children =
+            Margin = new Thickness(16),
+            Classes = { "card" },
+            Child = new StackPanel
             {
-                name, remember,
-                m.Speakers.Count > 1 ? new TextBlock { Text = "Oder zusammenführen mit:" } : new TextBlock(),
-                merges,
-                save.With(s => s.HorizontalAlignment = HorizontalAlignment.Right),
+                Spacing = 12,
+                Children =
+                {
+                    name, remember,
+                    m.Speakers.Count > 1 ? Hint("Oder zusammenführen mit:") : new TextBlock { IsVisible = false },
+                    merges,
+                    save.With(s => s.HorizontalAlignment = HorizontalAlignment.Right),
+                },
             },
         };
         await w.ShowDialog(this);
@@ -479,14 +513,20 @@ public partial class MainWindow
             bool have = File.Exists(Path.Combine(Diarizer.ModelDir, info.File));
             p.Children.Add(Card(new StackPanel
             {
-                Children = { new TextBlock { Text = $"{info.Label} ({info.SizeText})", FontWeight = FontWeight.SemiBold }, Hint(info.Tagline), Hint(have ? "✓ geladen" : "") },
+                Spacing = 4,
+                Children =
+                {
+                    new TextBlock { Text = $"{info.Label} ({info.SizeText})", FontWeight = FontWeight.SemiBold },
+                    Hint(info.Tagline),
+                    have ? new TextBlock { Text = "✓ geladen", FontSize = 12, Foreground = TertiaryBrush } : new TextBlock { IsVisible = false },
+                },
             }));
         }
         var missing = list.Where(i => !File.Exists(Path.Combine(Diarizer.ModelDir, i.File))).ToList();
         if (missing.Count == 0) { status.Text = "✓ Bereit."; return; }
         status.Text = "";
         var bar = new ProgressBar { Minimum = 0, Maximum = 1, Width = 300, IsVisible = false };
-        var dl = new Button { Content = "Alle laden" };
+        var dl = new Button { Content = "⬇  Alle laden", Classes = { "primaryAction" } };
         dl.Click += async (_, _) =>
         {
             dl.IsEnabled = false; bar.IsVisible = true;

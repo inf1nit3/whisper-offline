@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -35,7 +36,7 @@ fun HistoryOverlay(
     var query by remember { mutableStateOf("") }
     var days by remember { mutableIntStateOf(0) } // 0 = alle
     var oldestFirst by remember { mutableStateOf(false) }
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val enabled = remember { Settings.historyEnabled(context) }
     val shown = remember(entries, query, days, oldestFirst) {
         val since = if (days > 0) System.currentTimeMillis() - days * 86_400_000L else 0L
@@ -57,88 +58,78 @@ fun HistoryOverlay(
         )
     }
 
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-        // Auf Tablets nicht über die volle Breite — lesbar zentriert
-        Column(
-            Modifier
-                .fillMaxSize()
-                .systemBarsPadding()
-                .imePadding()
-                .wrapContentWidth(Alignment.CenterHorizontally)
-                .widthIn(max = 720.dp)
-        ) {
-            OverlayHeader(
-                title = "Verlauf",
-                subtitle = when {
-                    entries.isEmpty() -> null
-                    query.isBlank() && days == 0 -> "${entries.size} Einträge"
-                    else -> "${shown.size} von ${entries.size} Einträgen"
-                },
-                onClose = onClose,
-            ) {
-                if (entries.isNotEmpty()) {
-                    IconButton(onClick = { oldestFirst = !oldestFirst }) {
-                        Icon(Icons.Filled.SwapVert, contentDescription = if (oldestFirst) "Neueste zuerst" else "Älteste zuerst")
-                    }
-                    // Exportiert, was gerade sichtbar ist — mit Suche also nur die Treffer
-                    IconButton(onClick = { onExport(shown) }, enabled = shown.isNotEmpty()) {
-                        Icon(Icons.Filled.IosShare, contentDescription = "Als Textdatei teilen")
-                    }
-                    IconButton(onClick = { confirmClear = true }) {
-                        Icon(Icons.Filled.DeleteSweep, contentDescription = "Alle löschen")
-                    }
-                }
-            }
+    OverlayScaffold(
+        title = "Verlauf",
+        subtitle = when {
+            entries.isEmpty() -> null
+            query.isBlank() && days == 0 -> "${entries.size} Einträge"
+            else -> "${shown.size} von ${entries.size} Einträgen"
+        },
+        onClose = onClose,
+        actions = {
             if (entries.isNotEmpty()) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = { Text("Im Verlauf suchen") },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Suche leeren")
-                        }
-                    },
-                    singleLine = true,
-                    shape = MaterialTheme.shapes.extraLarge,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                )
-                Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(0 to "Alle", 7 to "7 Tage", 30 to "30 Tage").forEach { (d, label) ->
-                        FilterChip(selected = days == d, onClick = { days = d }, label = { Text(label) })
-                    }
+                IconButton(onClick = { oldestFirst = !oldestFirst }) {
+                    Icon(Icons.Filled.SwapVert, contentDescription = if (oldestFirst) "Neueste zuerst" else "Älteste zuerst")
+                }
+                // Exportiert, was gerade sichtbar ist — mit Suche also nur die Treffer
+                IconButton(onClick = { onExport(shown) }, enabled = shown.isNotEmpty()) {
+                    Icon(Icons.Filled.IosShare, contentDescription = "Als Textdatei teilen")
+                }
+                IconButton(onClick = { confirmClear = true }) {
+                    Icon(Icons.Filled.DeleteSweep, contentDescription = "Alle löschen")
                 }
             }
-            if (!enabled) {
-                StatusCard("Der Verlauf ist abgeschaltet (Einstellungen) — neue Transkriptionen werden nicht gespeichert.",
-                    isError = false, onDismiss = {}, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-            }
-            if (entries.isNotEmpty() && shown.isEmpty()) {
-                EmptyState(
-                    icon = Icons.Filled.SearchOff,
-                    title = "Nichts gefunden",
-                    hint = if (query.isBlank()) "Keine Einträge in diesem Zeitraum." else "Kein Eintrag enthält „${query.trim()}“.",
-                    modifier = Modifier.padding(top = 24.dp),
-                )
-            } else if (entries.isEmpty()) {
-                EmptyState(
-                    icon = Icons.Outlined.History,
-                    title = "Noch keine Einträge",
-                    hint = "Jede Transkription landet automatisch hier.",
-                    modifier = Modifier.padding(top = 48.dp),
-                )
-            } else {
-                LazyColumn(
-                    Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(shown) { e ->
-                        HistoryCard(e, onCopy = { onCopy(e.text) }, onDelete = { onDelete(e) })
+        }
+    ) {
+        if (entries.isNotEmpty()) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Im Verlauf suchen …") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) IconButton(onClick = { query = "" }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Suche leeren")
                     }
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.extraLarge,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            )
+            Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0 to "Alle", 7 to "7 Tage", 30 to "30 Tage").forEach { (d, label) ->
+                    FilterChip(selected = days == d, onClick = { days = d }, label = { Text(label) })
+                }
+            }
+        }
+        if (!enabled) {
+            StatusCard("Der Verlauf ist abgeschaltet (Einstellungen) — neue Transkriptionen werden nicht gespeichert.",
+                isError = false, onDismiss = {}, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        }
+        if (entries.isNotEmpty() && shown.isEmpty()) {
+            EmptyState(
+                icon = Icons.Filled.SearchOff,
+                title = "Nichts gefunden",
+                hint = if (query.isBlank()) "Keine Einträge in diesem Zeitraum." else "Kein Eintrag enthält „${query.trim()}“.",
+                modifier = Modifier.padding(top = 24.dp),
+            )
+        } else if (entries.isEmpty()) {
+            EmptyState(
+                icon = Icons.Outlined.History,
+                title = "Noch keine Einträge",
+                hint = "Jede Transkription landet automatisch hier.",
+                modifier = Modifier.padding(top = 48.dp),
+            )
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(shown, key = { it.timeMs }) { e ->
+                    HistoryCard(e, onCopy = { onCopy(e.text) }, onDelete = { onDelete(e) })
                 }
             }
         }
@@ -147,6 +138,13 @@ fun HistoryOverlay(
 
 @Composable
 private fun HistoryCard(e: HistoryEntry, onCopy: () -> Unit, onDelete: () -> Unit) {
+    val sourceLabel = when (e.source) {
+        HistoryEntry.SOURCE_DICTATION, HistoryEntry.SOURCE_KEYBOARD -> "Diktat"
+        HistoryEntry.SOURCE_FILE -> "Datei"
+        HistoryEntry.SOURCE_MEETING -> "Meeting"
+        HistoryEntry.SOURCE_SELECTION -> "Umgeformt"
+        else -> "Aufnahme"
+    }
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -154,6 +152,7 @@ private fun HistoryCard(e: HistoryEntry, onCopy: () -> Unit, onDelete: () -> Uni
                     Text(e.dateText(), style = MaterialTheme.typography.labelLarge)
                     Text(
                         listOfNotNull(
+                            sourceLabel,
                             modelDisplayName(e.model.takeIf { it.isNotBlank() }, null).takeIf { e.model.isNotBlank() },
                             e.language.takeIf { it.isNotBlank() },
                             formatDuration(e.audioSeconds).takeIf { e.audioSeconds > 0 },
@@ -519,6 +518,12 @@ fun ReplacementsContent(
 ) {
     var from by remember { mutableStateOf("") }
     var to by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf("") }
+    val filtered = remember(rules, filter) {
+        val q = filter.trim()
+        if (q.isEmpty()) rules
+        else rules.filter { it.from.contains(q, ignoreCase = true) || it.to.contains(q, ignoreCase = true) }
+    }
     fun add() {
         if (from.isBlank()) return
         onChange(rules.filterNot { it.from.equals(from.trim(), ignoreCase = true) } +
@@ -561,6 +566,21 @@ fun ReplacementsContent(
                 )
             }
         }
+        if (rules.size > 6) {
+            OutlinedTextField(
+                value = filter, onValueChange = { filter = it },
+                placeholder = { Text("Regeln filtern …") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (filter.isNotEmpty()) IconButton(onClick = { filter = "" }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Filter zurücksetzen")
+                    }
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.extraLarge,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         if (rules.isEmpty()) {
             EmptyState(
                 icon = Icons.Outlined.FindReplace,
@@ -568,7 +588,7 @@ fun ReplacementsContent(
                 hint = "Typische Kandidaten: Abkürzungen, feste Schreibweisen, wiederkehrende Fehler.",
             )
         }
-        rules.forEach { r ->
+        filtered.forEach { r ->
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Row(
                     Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
