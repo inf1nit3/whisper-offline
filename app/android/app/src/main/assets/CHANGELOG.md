@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.8
+
+**Neues Logo** — Windows und Android
+- Eigenes App-Symbol im Stil von scheisssewasser.xyz: Mikrofon auf einem Chip,
+  dazu eine Wellenform, im türkis-lila Neon-Ring
+- Android: neues Launcher-Symbol; ab Android 13 auch als einfarbiges Themen-Icon
+- Windows: Symbol der Exe, aller Fenster und des Tray-Symbols; in kleinen
+  Größen eine vereinfachte, gut lesbare Fassung
+
 ## v3.7
 
 **Windows: Smart Routing mit TypeSafe Jev (optional, standardmäßig aus)** — jetzt

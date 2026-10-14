@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Hintergrund des adaptiven Symbols: Navy aus dem App-Theme, leicht verlaufend. -->
+<!-- Hintergrund des adaptiven Symbols: Randfarbe der Logo-Scheibe, damit das
+     Emblem (Vordergrund) nahtlos in jede Launcher-Maske übergeht. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <gradient
-        android:angle="315"
-        android:startColor="#FF3B6FA3"
-        android:endColor="#FF1E3A5F" />
+    <solid android:color="#FF120926" />
 </shape>

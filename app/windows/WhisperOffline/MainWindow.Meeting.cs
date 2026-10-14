@@ -443,6 +443,7 @@ public partial class MainWindow
             Title = "Sprecher benennen", Width = 440, SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false,
             Background = BrandBrush("BrandSurfaceBrush", Brushes.White),
+            Icon = AppIcon.Get(),
         };
         var save = new Button { Content = "Speichern", Classes = { "primaryAction" }, IsDefault = true };
         var merges = new WrapPanel { ItemSpacing = 6, LineSpacing = 6 };
