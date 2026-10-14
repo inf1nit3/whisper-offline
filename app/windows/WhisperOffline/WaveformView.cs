@@ -1,36 +1,61 @@
 using System.Diagnostics;
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using Avalonia.Threading;
 
 namespace WhisperOffline;
 
-/// Wellenform für Aufnahme und Transkription: drei überlagerte Sinuswellen,
-/// deren Höhe dem Mikrofonpegel folgt (weich nachgeführt); beim Transkribieren
-/// eine ruhige Welle, im Leerlauf eine stille Linie. Der Timer läuft nur,
-/// solange sich etwas bewegt — im Leerlauf kostet die Anzeige nichts.
+/// Wellenform für Aufnahme und Transkription.
+///
+/// Aufnahme: die echte Signalauslenkung des Mikrofons als laufende
+/// Balken-Welle (wie in Sprachmemo-Apps). Jeder Bildwechsel holt den
+/// Spitzenwert seit dem letzten Bild ab und hängt ihn rechts an; die Welle
+/// läuft nach links. Ein langsamer Nachregler (Auto-Gain) sorgt dafür, dass
+/// auch leise Mikrofone eine deutliche Welle zeigen — deshalb „funktioniert“
+/// die Anzeige unabhängig von der Aufnahmelautstärke. Rechts steht die
+/// Aufnahmezeit.
+///
+/// Transkribieren: eine ruhige, dreamatische Welle aus drei überlagerten
+/// Sinusläufen. Leerlauf: eine dezente Verlaufslinie ohne Animation.
+/// Der Timer läuft nur, solange sich etwas bewegt.
 /// Gegenstück zu LiveWaveform in der Android-App.
 public sealed class WaveformView : Control
 {
     private enum Mode { Idle, Recording, Working }
 
-    private static readonly Color RecordColor = Color.Parse("#EF4444");
-    private static readonly Color RecordAccent = Color.Parse("#EC4899");
-    private static readonly Color WorkColor = Color.Parse("#8B5CF6");
-    private static readonly Color WorkAccent = Color.Parse("#38BDF8");
-    private static readonly Color IdleColor = Color.Parse("#808080");
+    private static readonly Color RecordFrom = Color.Parse("#F472B6");
+    private static readonly Color RecordTo = Color.Parse("#EF4444");
+    private static readonly Color WorkFrom = Color.Parse("#8B5CF6");
+    private static readonly Color WorkTo = Color.Parse("#38BDF8");
+    private static readonly Color IdleFrom = Color.Parse("#94A3B8");
+    private static readonly Color IdleTo = Color.Parse("#64748B");
 
-    // (Deckkraft, Strichstärke, Frequenz)
+    // (Deckkraft, Strichstärke, Frequenz) der Arbeits-Wellen
     private static readonly (double Alpha, double Stroke, double Freq)[] Layers =
         { (1.0, 2.8, 1.0), (0.55, 2.0, 1.6), (0.28, 1.4, 2.3) };
+
+    private const double ColumnWidth = 3;   // Balkenbreite in px
+    private const double ColumnGap = 2;     // Abstand zwischen Balken
+    private const double ColumnStep = ColumnWidth + ColumnGap;
 
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(16) };
     private readonly Stopwatch clock = new();
     private Func<float>? levelSource;
+    private Func<float>? peakSource;
     private Mode mode = Mode.Idle;
     private double phase, amplitude, target;
     private double lastTick;
+
+    // Laufende Welle: Ring der letzten Balkenhöhen (0..1), ältester zuerst.
+    private float[] columns = Array.Empty<float>();
+    private int colHead, colCount;
+    private int colSlots;
+    private double gain = 0.08;             // Auto-Gain: höchster kürzlicher Spitzenwert
+    private int silentTicks;                // > 2 s ohne jedes Signal → Hinweis
+    private DateTime recordStart;
 
     public WaveformView()
     {
@@ -38,22 +63,31 @@ public sealed class WaveformView : Control
         timer.Tick += (_, _) => Tick();
     }
 
-    /// Aufnahme: [levelOf] liefert den Pegel 0..1 (AudioRecorder.Level).
-    public void ShowRecording(Func<float> levelOf)
+    /// Aufnahme: [levelOf] liefert den RMS-Pegel 0..1 (AudioRecorder.Level),
+    /// [peakOf] optional den Spitzenwert seit dem letzten Abruf und setzt ihn
+    /// zurück (AudioRecorder.ConsumePeak) — daraus wird die echte Welle.
+    public void ShowRecording(Func<float> levelOf, Func<float>? peakOf = null)
     {
         levelSource = levelOf;
+        peakSource = peakOf;
+        recordStart = DateTime.UtcNow;
+        gain = 0.08;
+        colCount = 0;
+        silentTicks = 0;
         Switch(Mode.Recording);
     }
 
     public void ShowWorking()
     {
         levelSource = null;
+        peakSource = null;
         Switch(Mode.Working);
     }
 
     public void ShowIdle()
     {
         levelSource = null;
+        peakSource = null;
         Switch(Mode.Idle);
     }
 
@@ -67,6 +101,7 @@ public sealed class WaveformView : Control
             lastTick = 0;
             timer.Start();
         }
+        InvalidateVisual();
     }
 
     private void Tick()
@@ -75,9 +110,23 @@ public sealed class WaveformView : Control
         double dt = Math.Min(0.1, now - lastTick);
         lastTick = now;
 
-        if (mode == Mode.Recording && levelSource != null)
+        if (mode == Mode.Recording)
+        {
             // Wurzel: Sprache liegt meist im unteren Pegelbereich
-            target = Math.Clamp(Math.Sqrt(Math.Clamp(levelSource(), 0f, 1f)), 0.08, 1.0);
+            if (levelSource != null)
+                target = Math.Clamp(Math.Sqrt(Math.Clamp(levelSource(), 0f, 1f)), 0.08, 1.0);
+
+            // Neuer Balken aus dem echten Signal; Auto-Gain stellt sich dem
+            // Mikrofon nach (schnell hoch, langsam wieder herunter), damit
+            // die Welle auch bei leisen Geräten voll sichtbar ist.
+            double peak = peakSource != null ? peakSource()
+                : Math.Clamp(levelSource?.Invoke() ?? 0f, 0f, 1f);
+            gain = Math.Max(0.025, Math.Max(peak, gain * (1 - 0.004)));
+            double v = Math.Sqrt(Math.Min(1.0, peak / gain));
+            AppendColumn((float)v);
+            silentTicks = peak < 0.0005 ? Math.Min(silentTicks + 1, 1000) : 0;
+        }
+
         double speed = mode == Mode.Recording ? 5.7 : mode == Mode.Working ? 3.2 : 1.5; // rad/s
         phase = (phase + speed * dt) % (2 * Math.PI);
         // Exponentielle Glättung, unabhängig von der Bildrate
@@ -91,6 +140,15 @@ public sealed class WaveformView : Control
         InvalidateVisual();
     }
 
+    private void AppendColumn(float v)
+    {
+        if (columns.Length == 0) return;
+        int slot = (colHead + colCount) % columns.Length;
+        if (colCount < columns.Length) colCount++;
+        else colHead = (colHead + 1) % columns.Length; // ältesten überschreiben
+        columns[slot] = v;
+    }
+
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         timer.Stop();
@@ -102,13 +160,90 @@ public sealed class WaveformView : Control
         double w = Bounds.Width, h = Bounds.Height;
         if (w < 2 || h < 2) return;
         double mid = h / 2;
-        var (c1, c2) = mode switch
-        {
-            Mode.Recording => (RecordAccent, RecordColor),
-            Mode.Working => (WorkColor, WorkAccent),
-            _ => (IdleColor, IdleColor),
-        };
 
+        switch (mode)
+        {
+            case Mode.Recording:
+                RenderRecording(context, w, h, mid);
+                break;
+            case Mode.Working:
+                RenderWaves(context, w, h, mid);
+                break;
+            default:
+                RenderIdle(context, w, mid);
+                break;
+        }
+    }
+
+    /// Laufsende Balken aus dem echten Signal, mit Zeit rechts.
+    private void RenderRecording(DrawingContext context, double w, double h, double mid)
+    {
+        EnsureColumns(w);
+
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(WithAlpha(RecordFrom, 0), 0),
+                new GradientStop(WithAlpha(RecordFrom, 1), 0.12),
+                new GradientStop(WithAlpha(RecordTo, 1), 0.9),
+                new GradientStop(WithAlpha(RecordTo, 0.75), 1),
+            },
+        };
+        var pen = new Pen(new ImmutableSolidColorBrush(WithAlpha(RecordTo, 0.16)), 1);
+
+        // Balken von rechts (neueste) nach links zeichnen
+        double usable = h - 4;
+        int drawn = 0;
+        for (int i = colCount - 1; i >= 0; i--)
+        {
+            double x = w - ColumnGap - ColumnWidth - i * ColumnStep;
+            if (x < 0) break;
+            float v = columns[(colHead + i) % columns.Length];
+            double bar = 3 + v * usable * 0.94;
+            var rect = new Rect(x, mid - bar / 2, ColumnWidth, bar);
+            context.DrawRectangle(brush, null, rect, ColumnWidth / 2, ColumnWidth / 2);
+            drawn++;
+        }
+        // Auch ohne Balken (ganz am Anfang): gepunktete Grundlinie zeigt Leben
+        if (drawn == 0)
+            for (double x = w - ColumnWidth; x >= 0; x -= ColumnStep)
+                context.DrawRectangle(brush, null, new Rect(x, mid - 1, ColumnWidth, 3), 1.5, 1.5);
+
+        // Sanfte Mittellinie verbindet die Balken optisch
+        if (drawn > 0)
+            context.DrawLine(pen, new Point(0, mid), new Point(w, mid));
+
+        // Aufnahmezeit rechts: helle Schrift auf dunkler Pille, über den Balken
+        var elapsed = DateTime.UtcNow - recordStart;
+        var label = new FormattedText(
+            $"{(int)elapsed.TotalMinutes:0}:{elapsed.Seconds:00}",
+            CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 11,
+            Brushes.White);
+        double tw = label.WidthIncludingTrailingWhitespace + 10;
+        double th = label.Height + 4;
+        var pill = new Rect(w - tw - 4, mid - th / 2, tw, th);
+        context.DrawRectangle(new ImmutableSolidColorBrush(Color.FromArgb(165, 15, 18, 24)), null, pill, th / 2, th / 2);
+        context.DrawText(label, new Point(pill.X + 5, mid - label.Height / 2));
+
+        // Länger als zwei Sekunden nicht das geringste Signal: Das Mikrofon
+        // liefert nichts (stumm, verboten oder falsches Gerät) — direkt in
+        // der Welle sagen, statt eine tote Anzeige zu zeigen.
+        if (silentTicks > 125)
+        {
+            var hint = new FormattedText(
+                "Kein Eingangssignal — Mikrofon prüfen",
+                CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 11,
+                new ImmutableSolidColorBrush(Color.FromArgb(220, 255, 205, 120)));
+            context.DrawText(hint, new Point(10, mid - hint.Height / 2));
+        }
+    }
+
+    /// Ruhige Welle beim Transkribieren: drei überlagerte Sinusläufe.
+    private void RenderWaves(DrawingContext context, double w, double h, double mid)
+    {
         for (int i = 0; i < Layers.Length; i++)
         {
             var (alpha, stroke, freq) = Layers[i];
@@ -134,13 +269,47 @@ public sealed class WaveformView : Control
                 GradientStops =
                 {
                     new GradientStop(Colors.Transparent, 0),
-                    new GradientStop(WithAlpha(c1, alpha), 0.2),
-                    new GradientStop(WithAlpha(c2, alpha), 0.8),
+                    new GradientStop(WithAlpha(WorkFrom, alpha), 0.2),
+                    new GradientStop(WithAlpha(WorkTo, alpha), 0.8),
                     new GradientStop(Colors.Transparent, 1),
                 },
             };
             context.DrawGeometry(null, new Pen(brush, stroke, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round), geometry);
         }
+    }
+
+    /// Dezente Ruhelinie — sichtbar auf hellen wie dunklen Karten.
+    private void RenderIdle(DrawingContext context, double w, double mid)
+    {
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Colors.Transparent, 0),
+                new GradientStop(WithAlpha(IdleFrom, 0.9), 0.15),
+                new GradientStop(WithAlpha(IdleTo, 0.9), 0.85),
+                new GradientStop(Colors.Transparent, 1),
+            },
+        };
+        context.DrawLine(new Pen(brush, 2, lineCap: PenLineCap.Round), new Point(2, mid), new Point(w - 2, mid));
+    }
+
+    /// Ringpuffer an die Breite anpassen: ~140 Balken passen immer, bei mehr
+    /// Platz läuft die Welle weiter in die Vergangenheit.
+    private void EnsureColumns(double w)
+    {
+        int slots = Math.Max(16, (int)(w / ColumnStep));
+        if (slots == colSlots && columns.Length > 0) return;
+        var fresh = new float[slots];
+        int keep = Math.Min(colCount, slots);
+        for (int i = 0; i < keep; i++)
+            fresh[i] = columns[(colHead + colCount - keep + i) % columns.Length];
+        columns = fresh;
+        colSlots = slots;
+        colHead = 0;
+        colCount = keep;
     }
 
     private static Color WithAlpha(Color c, double a) => Color.FromArgb((byte)(c.A * a), c.R, c.G, c.B);

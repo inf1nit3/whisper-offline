@@ -116,7 +116,8 @@ public partial class MainWindow
         StatusLabel.Text = "🎙 Diktat läuft — " + HotkeySpec.Describe(settings.HotkeyModifiers, settings.HotkeyVk) +
                            (settings.PushToTalk ? " loslassen" : " beendet & fügt ein");
         if (settings.ShowOverlay)
-            Overlay.ShowRecording(() => recorder.Level, willEnhance ? "✨ " + dictationMode.Label() : "");
+            Overlay.ShowRecording(() => recorder.Level, recorder.ConsumePeak,
+                willEnhance ? "✨ " + dictationMode.Label() : "");
         if (settings.LiveTranscription && WhisperNative.Available)
         {
             dictationLive = new LiveTranscriber(recorder, settings, Lang, settings.Translate,

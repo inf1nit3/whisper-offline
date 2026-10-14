@@ -842,7 +842,7 @@ public partial class MainWindow : Window
             }
             RecordButton.Content = "⏹  Aufnahme beenden";
             RecordButton.Classes.Add("recording");
-            Waveform.ShowRecording(() => recorder.Level);
+            Waveform.ShowRecording(() => recorder.Level, recorder.ConsumePeak);
             StatusLabel.Text = "Aufnahme läuft…";
             if (settings.LiveTranscription && WhisperNative.Available)
             {

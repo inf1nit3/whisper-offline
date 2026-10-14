@@ -1,5 +1,32 @@
 # Changelog
 
+## v3.6
+
+**Windows: Die Sprach-Visualisierung funktioniert jetzt wirklich**
+- Während der Aufnahme zeigt die Wellenform das echte Mikrofonsignal als
+  laufende Balkenwelle (wie in Sprachmemo-Apps) — nicht mehr nur eine
+  synthetische Sinuskurve, die vom RMS-Pegel abhing und bei leisen
+  Mikrofonen praktisch unsichtbar blieb
+- Auto-Gain: Die Anzeige regelt sich auf das Mikrofon ein (schnell hoch,
+  langsam herunter) — auch leise Geräte zeigen eine volle, klare Welle
+- Aufnahmezeit läuft direkt in der Welle mit (helle Ziffern auf dunkler
+  Pille, rechts)
+- Kommt über zwei Sekunden gar kein Signal, steht in der Welle
+  „Kein Eingangssignal — Mikrofon prüfen“ — statt einer toten Anzeige
+- Beim Transkribieren weiter die ruhige Welle, im Leerlauf eine deutliche
+  Ruhelinie, die auf hellen wie dunklen Karten sichtbar ist
+- Diktat-Overlay profitiert von derselben echten Wellenform
+
+**Windows: Frischeres Design**
+- Hauptknopf und Titel mit blauem Farbverlauf statt matter Volltonfläche
+- Karten mit weichem Schatten und größerer Rundung, Chips mit ruhiger
+  Füllung statt nacktem Text
+- Wellenform bekommt eine eigene „Bühne“ (leicht abgesetzter Grund), auf
+  der die Welle zur Geltung kommt; Fensterfläche mit ganz dezentem
+  Verlauf für Tiefe
+
+**Android:** keine Änderungen gegenüber v3.5.
+
 ## v3.5
 
 **Windows:** keine Änderungen gegenüber v3.4.

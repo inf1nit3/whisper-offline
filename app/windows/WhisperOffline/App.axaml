@@ -11,7 +11,6 @@
                     <Color x:Key="BrandPrimaryContainerColor">#D3E4FF</Color>
                     <Color x:Key="BrandTertiaryColor">#1F7A4D</Color>
                     <Color x:Key="BrandErrorColor">#DC2626</Color>
-                    <Color x:Key="BrandSurfaceColor">#F8F9FF</Color>
                     <Color x:Key="BrandCardBackgroundColor">#FFFFFF</Color>
                     <Color x:Key="BrandCardBorderColor">#DFE2EB</Color>
                     <Color x:Key="BrandSubtleTextColor">#535F70</Color>
@@ -20,10 +19,37 @@
                     <SolidColorBrush x:Key="BrandPrimaryContainerBrush" Color="{StaticResource BrandPrimaryContainerColor}" />
                     <SolidColorBrush x:Key="BrandTertiaryBrush" Color="{StaticResource BrandTertiaryColor}" />
                     <SolidColorBrush x:Key="BrandErrorBrush" Color="{StaticResource BrandErrorColor}" />
-                    <SolidColorBrush x:Key="BrandSurfaceBrush" Color="{StaticResource BrandSurfaceColor}" />
                     <SolidColorBrush x:Key="BrandCardBackgroundBrush" Color="{StaticResource BrandCardBackgroundColor}" />
                     <SolidColorBrush x:Key="BrandCardBorderBrush" Color="{StaticResource BrandCardBorderColor}" />
                     <SolidColorBrush x:Key="BrandSubtleTextBrush" Color="{StaticResource BrandSubtleTextColor}" />
+
+                    <!-- Fläche mit ganz dezentem Verlauf: Tiefe statt flacher Füllung -->
+                    <LinearGradientBrush x:Key="BrandSurfaceBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Color="#F8FAFF" Offset="0" />
+                        <GradientStop Color="#ECF1FA" Offset="1" />
+                    </LinearGradientBrush>
+
+                    <!-- Hauptknopf: leuchtender Blauverlauf statt matter Vollton -->
+                    <LinearGradientBrush x:Key="BrandActionBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Color="#4E90E2" Offset="0" />
+                        <GradientStop Color="#2E6CB5" Offset="1" />
+                    </LinearGradientBrush>
+                    <LinearGradientBrush x:Key="BrandActionHoverBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Color="#4284D6" Offset="0" />
+                        <GradientStop Color="#2860A9" Offset="1" />
+                    </LinearGradientBrush>
+                    <LinearGradientBrush x:Key="BrandActionPressedBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Color="#3773BA" Offset="0" />
+                        <GradientStop Color="#215292" Offset="1" />
+                    </LinearGradientBrush>
+
+                    <!-- Bühne unter der Wellenform -->
+                    <SolidColorBrush x:Key="BrandStageBrush" Color="#EDF2FA" />
+                    <SolidColorBrush x:Key="BrandStageBorderBrush" Color="#E0E8F4" />
+
+                    <!-- Chips mit ruhiger Füllung statt nacktem Text -->
+                    <SolidColorBrush x:Key="BrandChipBackgroundBrush" Color="#ECF0F8" />
+                    <SolidColorBrush x:Key="BrandChipBorderBrush" Color="#DCE3EF" />
                 </ResourceDictionary>
 
                 <ResourceDictionary x:Key="Dark">
@@ -31,7 +57,6 @@
                     <Color x:Key="BrandPrimaryContainerColor">#0F4880</Color>
                     <Color x:Key="BrandTertiaryColor">#8BD6A9</Color>
                     <Color x:Key="BrandErrorColor">#EF4444</Color>
-                    <Color x:Key="BrandSurfaceColor">#111418</Color>
                     <Color x:Key="BrandCardBackgroundColor">#1D2024</Color>
                     <Color x:Key="BrandCardBorderColor">#32353A</Color>
                     <Color x:Key="BrandSubtleTextColor">#9CA3AF</Color>
@@ -40,10 +65,33 @@
                     <SolidColorBrush x:Key="BrandPrimaryContainerBrush" Color="{StaticResource BrandPrimaryContainerColor}" />
                     <SolidColorBrush x:Key="BrandTertiaryBrush" Color="{StaticResource BrandTertiaryColor}" />
                     <SolidColorBrush x:Key="BrandErrorBrush" Color="{StaticResource BrandErrorColor}" />
-                    <SolidColorBrush x:Key="BrandSurfaceBrush" Color="{StaticResource BrandSurfaceColor}" />
                     <SolidColorBrush x:Key="BrandCardBackgroundBrush" Color="{StaticResource BrandCardBackgroundColor}" />
                     <SolidColorBrush x:Key="BrandCardBorderBrush" Color="{StaticResource BrandCardBorderColor}" />
                     <SolidColorBrush x:Key="BrandSubtleTextBrush" Color="{StaticResource BrandSubtleTextColor}" />
+
+                    <LinearGradientBrush x:Key="BrandSurfaceBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Color="#12151A" Offset="0" />
+                        <GradientStop Color="#171B22" Offset="1" />
+                    </LinearGradientBrush>
+
+                    <LinearGradientBrush x:Key="BrandActionBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Color="#5B9BE5" Offset="0" />
+                        <GradientStop Color="#2F5FA8" Offset="1" />
+                    </LinearGradientBrush>
+                    <LinearGradientBrush x:Key="BrandActionHoverBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Color="#4E8CD8" Offset="0" />
+                        <GradientStop Color="#29549A" Offset="1" />
+                    </LinearGradientBrush>
+                    <LinearGradientBrush x:Key="BrandActionPressedBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Color="#427DC4" Offset="0" />
+                        <GradientStop Color="#234986" Offset="1" />
+                    </LinearGradientBrush>
+
+                    <SolidColorBrush x:Key="BrandStageBrush" Color="#0D1117" />
+                    <SolidColorBrush x:Key="BrandStageBorderBrush" Color="#272D38" />
+
+                    <SolidColorBrush x:Key="BrandChipBackgroundBrush" Color="#212732" />
+                    <SolidColorBrush x:Key="BrandChipBorderBrush" Color="#343B48" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
@@ -55,15 +103,27 @@
             <Setter Property="Background" Value="{DynamicResource BrandCardBackgroundBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource BrandCardBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="CornerRadius" Value="14" />
             <Setter Property="Padding" Value="16" />
+            <Setter Property="BoxShadow" Value="0 3 14 0 #17000000" />
+        </Style>
+        <!-- Bühne für die Wellenform: eigener Grund, damit die Welle zur Geltung kommt -->
+        <Style Selector="Border.waveStage">
+            <Setter Property="Background" Value="{DynamicResource BrandStageBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrandStageBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="10,4" />
         </Style>
         <Style Selector="Button.chip">
             <Setter Property="CornerRadius" Value="18" />
             <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Background" Value="{DynamicResource BrandChipBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrandChipBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
         </Style>
         <Style Selector="Button.primaryAction">
-            <Setter Property="Background" Value="#2D5A88" />
+            <Setter Property="Background" Value="{DynamicResource BrandActionBrush}" />
             <Setter Property="Foreground" Value="White" />
             <Setter Property="CornerRadius" Value="24" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -71,11 +131,11 @@
         </Style>
         <!-- Fluent färbt Hover/Gedrückt sonst hellgrau mit schwarzer Schrift -->
         <Style Selector="Button.primaryAction:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#24496F" />
+            <Setter Property="Background" Value="{DynamicResource BrandActionHoverBrush}" />
             <Setter Property="Foreground" Value="White" />
         </Style>
         <Style Selector="Button.primaryAction:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#1D3B5A" />
+            <Setter Property="Background" Value="{DynamicResource BrandActionPressedBrush}" />
             <Setter Property="Foreground" Value="White" />
         </Style>
     </Application.Styles>

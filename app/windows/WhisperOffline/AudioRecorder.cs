@@ -24,6 +24,10 @@ public sealed class AudioRecorder : ISampleSource
     private int sourceRate = 48000;
     private Ducker? ducker;
 
+    // Maximalwert seit dem letzten Abholen — die Wellenform holt ihn pro Bild ab.
+    private readonly object tapGate = new();
+    private float peakTap;
+
     /// Gelesen bei Start/Stopp; null = ohne Extras.
     public AppSettings? Settings { get; set; }
 
@@ -38,6 +42,19 @@ public sealed class AudioRecorder : ISampleSource
     /// Pegel des letzten Blocks (RMS, grob 0..1).
     public float Level { get; private set; }
 
+    /// Größter Sample-Wert seit dem letzten Abholen (0..1) und Zurücksetzen.
+    /// Liefert die echte Signalauslenkung für die Live-Wellenform — unabhängig
+    /// von der Mikrofonlautstärke, weil die Anzeige selbst nachregelt.
+    public float ConsumePeak()
+    {
+        lock (tapGate)
+        {
+            float p = peakTap;
+            peakTap = 0;
+            return p;
+        }
+    }
+
     public bool Start()
     {
         if (IsRecording) return true;
@@ -48,6 +65,7 @@ public sealed class AudioRecorder : ISampleSource
             sourceRate = cap.WaveFormat.SampleRate;
             int channels = cap.WaveFormat.Channels;
             lock (gate) mono.Clear();
+            lock (tapGate) peakTap = 0;
             var resampler = new StreamResampler(sourceRate);
             // Den eigenen Startton nicht mit aufnehmen
             int mute = Settings is { AudioFeedback: true } ? sourceRate * 15 / 100 : 0;
@@ -60,6 +78,7 @@ public sealed class AudioRecorder : ISampleSource
                 Buffer.BlockCopy(e.Buffer, 0, buffer, 0, e.BytesRecorded);
                 var frame = new float[floatCount / Math.Max(1, channels)];
                 double sum = 0;
+                float peak = 0;
                 for (int f = 0, i = 0; f < frame.Length; f++, i += channels)
                 {
                     float acc = 0;
@@ -67,8 +86,11 @@ public sealed class AudioRecorder : ISampleSource
                     frame[f] = mute > 0 ? 0f : acc / channels;
                     if (mute > 0) mute--;
                     sum += frame[f] * frame[f];
+                    float a = Math.Abs(frame[f]);
+                    if (a > peak) peak = a;
                 }
                 if (frame.Length > 0) Level = (float)Math.Min(1.0, Math.Sqrt(sum / frame.Length) * 4);
+                if (peak > 0) lock (tapGate) if (peak > peakTap) peakTap = peak;
                 if (KeepInMemory) lock (gate) mono.AddRange(frame);
                 if (OnChunk != null) OnChunk(resampler.Process(frame));
             };
@@ -94,6 +116,7 @@ public sealed class AudioRecorder : ISampleSource
         var cap = capture;
         capture = null;
         Level = 0;
+        lock (tapGate) peakTap = 0;
         if (cap != null)
         {
             try { cap.StopRecording(); } catch { }

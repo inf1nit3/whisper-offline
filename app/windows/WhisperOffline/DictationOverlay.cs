@@ -68,12 +68,12 @@ public sealed class DictationOverlay : Window
         Position = new PixelPoint(area.X + (area.Width - w) / 2, area.Y + area.Height - (int)(140 * scale));
     }
 
-    public void ShowRecording(Func<float> levelOf, string mode)
+    public void ShowRecording(Func<float> levelOf, Func<float>? peakOf, string mode)
     {
         started = DateTime.Now;
         modeText = mode;
         state.Text = "🎙  Aufnahme";
-        level.ShowRecording(levelOf);
+        level.ShowRecording(levelOf, peakOf);
         live.Text = "";
         live.IsVisible = false;
         if (!IsVisible) { Place(); Show(); }
