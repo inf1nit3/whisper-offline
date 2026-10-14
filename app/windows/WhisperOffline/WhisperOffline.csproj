@@ -7,7 +7,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>WhisperOffline</RootNamespace>
     <AssemblyName>WhisperOffline</AssemblyName>
-    <Version>3.5.0</Version>
+    <Version>3.6.0</Version>
+    <!-- Symbol der Exe im Explorer und in der Taskleiste -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
@@ -20,6 +22,10 @@
          -windows-Zielframework, damit der Cross-Build von macOS aus weiter geht. -->
     <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
     <PackageReference Include="org.k2fsa.sherpa.onnx" Version="1.13.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
   <!-- CHANGELOG.md aus dem Repo-Root einbetten (In-App-Changelog, offline) -->

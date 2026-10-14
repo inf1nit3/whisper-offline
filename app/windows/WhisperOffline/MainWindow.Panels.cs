@@ -104,6 +104,7 @@ public partial class MainWindow
             Title = title, Width = 400, SizeToContent = SizeToContent.Height, CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = BrandBrush("BrandSurfaceBrush", Brushes.White),
+            Icon = AppIcon.Get(),
         };
         var ok = new Button { Content = yes, Classes = { "primaryAction" }, Background = ErrorBrush };
         var no = new Button { Content = "Abbrechen", Classes = { "chip" }, IsCancel = true };
@@ -328,6 +329,7 @@ public partial class MainWindow
             Title = "System-Prompt", Width = 640, SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = BrandBrush("BrandSurfaceBrush", Brushes.White),
+            Icon = AppIcon.Get(),
         };
         var save = new Button { Content = "Speichern", Classes = { "primaryAction" } };
         var reset = new Button { Content = "Standard", Classes = { "chip" } };

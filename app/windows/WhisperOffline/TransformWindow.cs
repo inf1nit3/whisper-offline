@@ -33,6 +33,7 @@ public sealed class TransformWindow : Window
     public TransformWindow(string selectedText, Func<bool>? startDictation, Func<Task<string?>>? stopDictation)
     {
         Title = "Auswahl bearbeiten";
+        Icon = AppIcon.Get();
         Width = 480;
         SizeToContent = SizeToContent.Height;
         Topmost = true;

@@ -321,17 +321,6 @@ public partial class MainWindow : Window
 
     private void SetupTray()
     {
-        // 32x32-Icon aus dem Code zeichnen (blauer Grund, weißes Mikrofon-Symbol)
-        var rtb = new RenderTargetBitmap(new PixelSize(32, 32));
-        using (var ctx = rtb.CreateDrawingContext())
-        {
-            ctx.DrawRectangle(new SolidColorBrush(Color.Parse("#2D5A88")), null, new Rect(0, 0, 32, 32), 7, 7);
-            ctx.DrawEllipse(Brushes.White, null, new Point(16, 13), 4, 6);
-            ctx.DrawRectangle(Brushes.White, null, new Rect(12, 19, 8, 2), 1, 1);
-            ctx.DrawRectangle(Brushes.White, null, new Rect(15, 21, 2, 5), 1, 1);
-            ctx.DrawRectangle(Brushes.White, null, new Rect(10, 25, 12, 2), 1, 1);
-        }
-
         var menu = new NativeMenu();
         var open = new NativeMenuItem { Header = "Öffnen" };
         open.Click += (_, _) => { Show(); Activate(); };
@@ -349,7 +338,7 @@ public partial class MainWindow : Window
 
         tray = new TrayIcon
         {
-            Icon = new WindowIcon(rtb),
+            Icon = AppIcon.Get(),
             Menu = menu,
             ToolTipText = "Scheisssewasser's Whisper — Strg+Alt+Leertaste: Diktat",
         };

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Einfarbige Ebene des App-Symbols (Themen-Icons ab Android 13): Ring, Chip
+     und Mikrofon des Logos, ohne Wellenform - die würde einfarbig unruhig. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M54,22.5a31.5,31.5 0,1 1,0,63a31.5,31.5 0,1 1,0,-63"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.5" />
+    <path
+        android:pathData="M43.63,38.87H64.37A4.75,4.75 0,0 1,69.13,43.63V64.37A4.75,4.75 0,0 1,64.37,69.13H43.63A4.75,4.75 0,0 1,38.87,64.37V43.63A4.75,4.75 0,0 1,43.63,38.87Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M50.11,47.95A3.89,3.89 0,0 1,57.89,47.95V53.57A3.89,3.89 0,0 1,50.11,53.57Z" />
+    <path
+        android:pathData="M47.08,53.14A6.92,6.92 0,0 0,60.92,53.14 M54,60.05V63.08M50.33,63.51H57.67"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round" />
+</vector>
