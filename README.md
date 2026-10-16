@@ -482,6 +482,8 @@ Entscheidungslogik (`JevDecision`, getestet in `JevDecisionTest`):
 - Rauschen (`noise_or_empty` ab 0,85 und Aufnahme < 3 s): nicht im Verlauf gespeichert.
 - Offline, kein Key, Fehler oder mehr als 1,5 s: Rohtranskript, alles wie ohne Jev.
   Bei HTTP 429/529 gibt es einen kurzen Retry innerhalb dieses Zeitbudgets.
+- Damit das Budget reicht, baut die App die Verbindung schon beim Aufnahmestart bzw.
+  Dateistart auf: ein leerer `HEAD` ohne Key und ohne Text, höchstens einmal pro Minute.
 - Das Modell ist gepinnt (`jev-1.13.0`, einstellbar), damit kalibrierte Schwellenwerte bei
   Updates nicht driften. Wörter und Dauer rechnet die App vor — Jev kann nicht zählen.
 - Klassifiziert werden Aufnahmen in der App und Einzeldateien, nicht Tastatur, Diktat-Overlay

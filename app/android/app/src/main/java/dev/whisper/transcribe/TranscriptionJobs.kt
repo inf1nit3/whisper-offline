@@ -70,6 +70,7 @@ object TranscriptionJobs {
     fun startFiles(context: Context, uris: List<Uri>, setup: Setup) {
         if (uris.isEmpty()) return
         val app = context.applicationContext
+        Jev.warmUp(app)
         begin(app, Running(filesTitle(0, uris.size, "wird gelesen"), 0f, null)) {
             if (uris.size == 1) return@begin decodeAndTranscribe(app, uris[0], setup, 0, 1)
             val texts = mutableListOf<String>()
@@ -131,6 +132,7 @@ object TranscriptionJobs {
     /// fehlt nur noch der Rest — dann geht es fast ohne Wartezeit.
     fun startSamples(context: Context, samples: FloatArray, setup: Setup, live: LiveTranscriber? = null) {
         val app = context.applicationContext
+        Jev.warmUp(app)
         begin(app, Running(titleFor(samples), null, null)) {
             transcribe(app, samples, setup, "", source = HistoryEntry.SOURCE_APP, live = live)
         }

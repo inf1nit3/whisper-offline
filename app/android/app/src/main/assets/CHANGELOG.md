@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.9
+
+**Smart Routing zuverlässiger** — Android und Windows
+- Die Verbindung zu TypeSafe wird schon beim Aufnahmestart bzw. beim Start
+  einer Datei aufgebaut, nicht erst nach der Transkription. Bisher lief die
+  erste Einordnung nach dem App-Start oft in die 1,5-s-Grenze und wurde
+  übersprungen
+- Dafür geht nur eine leere Anfrage ohne Text und ohne API-Key an
+  api.typesafe.ai — und nur, wenn Smart Routing eingeschaltet ist
+
 ## v3.8
 
 **Neues Logo** — Windows und Android

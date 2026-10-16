@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONException
@@ -128,6 +129,11 @@ object JevClient {
     const val TIMEOUT_MS = 1500L
 
     private const val RETRY_BACKOFF_MS = 250L
+    private const val WARM_UP_INTERVAL_MS = 60_000L
+    private const val WARM_UP_TIMEOUT_MS = 5000
+    private const val TAG = "Jev"
+
+    @Volatile private var lastWarmUp = 0L
 
     enum class Error { TIMEOUT, NETWORK, UNAUTHORIZED, SCHEMA, RATE_LIMITED, SERVER, INVALID_RESPONSE }
 
@@ -147,6 +153,31 @@ object JevClient {
         val pending = scope.async { execute(request, apiKey, timeoutMs) }
         return withTimeoutOrNull(timeoutMs) { pending.await() }
             ?: Result.Failure(Error.TIMEOUT, "Zeitüberschreitung").also { pending.cancel() }
+    }
+
+    /// Baut die Verbindung vorab auf (DNS, TLS, Klassen laden), damit die
+    /// Anfrage nach der Transkription ins Zeitbudget passt — kalt brauchte die
+    /// erste Anfrage im Emulator länger als 1,5 s. Schickt nur einen leeren HEAD
+    /// ohne Key und ohne Text (Antwort 405); die Verbindung bleibt im Pool und
+    /// der POST verwendet sie wieder. Höchstens einmal pro Minute, Fehler egal.
+    fun warmUp() {
+        val now = SystemClock.elapsedRealtime()
+        if (lastWarmUp != 0L && now - lastWarmUp < WARM_UP_INTERVAL_MS) return
+        lastWarmUp = now
+        scope.launch {
+            try {
+                val conn = URL(ENDPOINT).openConnection() as HttpURLConnection
+                conn.requestMethod = "HEAD"
+                conn.connectTimeout = WARM_UP_TIMEOUT_MS
+                conn.readTimeout = WARM_UP_TIMEOUT_MS
+                val code = conn.responseCode
+                // Body schließen statt disconnect() — sonst wird die Verbindung geschlossen statt gepoolt
+                (if (code >= 400) conn.errorStream else conn.inputStream)?.close()
+                Log.d(TAG, "Verbindung vorbereitet (HTTP $code, ${SystemClock.elapsedRealtime() - now} ms)")
+            } catch (_: IOException) {
+                // Offline o. Ä.: die eigentliche Anfrage fällt dann ohnehin aufs Rohtranskript zurück
+            }
+        }
     }
 
     /// 429/529: ein einziger kurzer Retry, solange das Zeitbudget es zulässt.
@@ -399,6 +430,12 @@ object Jev {
     fun isActive(context: Context): Boolean =
         Settings.jevEnabled(context) && Settings.jevApiKey(context).isNotBlank()
 
+    /// Aufrufen, sobald gleich ein Transkript kommt (Aufnahmestart, Datei).
+    /// Nur wenn eingeschaltet — sonst kein Netzwerkzugriff.
+    fun warmUp(context: Context) {
+        if (isActive(context)) JevClient.warmUp()
+    }
+
     /// Klassifiziert ein fertiges Transkript. Gibt bei jedem Problem null
     /// zurück (Offline, Timeout, Key, Schema) — der Aufrufer behandelt das
     /// Transkript dann wie ohne Jev.
@@ -411,10 +448,14 @@ object Jev {
             JevQuestions.state(text, durationSeconds, lang),
             Settings.jevProjectTags(context),
         )
+        val t0 = SystemClock.elapsedRealtime()
         return when (val r = JevClient.send(request, Settings.jevApiKey(context))) {
-            is JevClient.Result.Success -> JevDecision.decide(r.response, durationSeconds)
+            is JevClient.Result.Success -> {
+                Log.d(TAG, "Klassifiziert in ${SystemClock.elapsedRealtime() - t0} ms")
+                JevDecision.decide(r.response, durationSeconds)
+            }
             is JevClient.Result.Failure -> {
-                Log.w(TAG, "Klassifikation übersprungen: ${r.error}")
+                Log.w(TAG, "Klassifikation übersprungen: ${r.error} (${SystemClock.elapsedRealtime() - t0} ms)")
                 null
             }
         }

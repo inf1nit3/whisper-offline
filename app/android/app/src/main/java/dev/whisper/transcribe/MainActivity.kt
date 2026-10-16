@@ -416,6 +416,8 @@ fun App(
         if (!recording) {
             if (recorder.start()) {
                 recording = true
+                // Mit Live-Transkription ist der Text sofort fertig — Smart Routing schon jetzt vorbereiten
+                Jev.warmUp(context)
                 showStatus(null)
                 liveText = ""
                 live = if (Settings.liveTranscription(context)) {

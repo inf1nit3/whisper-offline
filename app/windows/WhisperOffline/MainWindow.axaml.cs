@@ -884,6 +884,8 @@ public partial class MainWindow : Window
                 StatusLabel.Text = "Mikrofon konnte nicht geöffnet werden.";
                 return;
             }
+            // Mit Live-Transkription ist der Text sofort fertig — Smart Routing schon jetzt vorbereiten
+            Jev.WarmUp(settings);
             RecordButton.Content = "⏹  Aufnahme beenden";
             RecordButton.Classes.Add("recording");
             Waveform.ShowRecording(() => recorder.Level, recorder.ConsumePeak);
@@ -994,6 +996,7 @@ public partial class MainWindow : Window
         busy = true;
         FileButton.IsEnabled = RecordButton.IsEnabled = false;
         Waveform.ShowWorking();
+        Jev.WarmUp(settings);
         var name = Path.GetFileName(path);
         try
         {

@@ -148,7 +148,17 @@ public static class JevClient
     public const int TimeoutMs = 1500;
 
     private const int RetryBackoffMs = 250;
-    private static readonly HttpClient http = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private const int WarmUpIntervalMs = 60_000;
+    private const int WarmUpTimeoutMs = 5000;
+
+    // Unbenutzte Verbindungen 5 statt 1 Minute halten: die per WarmUp
+    // aufgebaute Verbindung soll auch längere Transkriptionen überdauern.
+    private static readonly HttpClient http = new(new SocketsHttpHandler
+    {
+        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
+    }) { Timeout = Timeout.InfiniteTimeSpan };
+
+    private static long lastWarmUp;
 
     public enum Error { Timeout, Network, Unauthorized, Schema, RateLimited, Server, InvalidResponse }
 
@@ -171,6 +181,32 @@ public static class JevClient
         catch (HttpRequestException) { return new Result.Failure(Error.Network, "Keine Verbindung"); }
         catch (IOException) { return new Result.Failure(Error.Network, "Keine Verbindung"); }
         catch (JsonException) { return new Result.Failure(Error.InvalidResponse, "Unerwartete Antwort"); }
+    }
+
+    /// Baut die Verbindung vorab auf (DNS, TLS), damit die Anfrage nach der
+    /// Transkription ins Zeitbudget passt — kalt brauchte die erste Anfrage
+    /// länger als 1,5 s (gemessen unter Android). Schickt nur einen leeren HEAD
+    /// ohne Key und ohne Text (Antwort 405); die Verbindung bleibt im Pool und
+    /// der POST verwendet sie wieder. Höchstens einmal pro Minute, Fehler egal.
+    public static void WarmUp()
+    {
+        long now = Environment.TickCount64;
+        long last = Interlocked.Read(ref lastWarmUp);
+        if (last != 0 && now - last < WarmUpIntervalMs) return;
+        Interlocked.Exchange(ref lastWarmUp, now);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(WarmUpTimeoutMs);
+                using var req = new HttpRequestMessage(HttpMethod.Head, Endpoint);
+                using var resp = await http.SendAsync(req, cts.Token);
+            }
+            catch (Exception)
+            {
+                // Offline o. Ä.: die eigentliche Anfrage fällt dann ohnehin aufs Rohtranskript zurück
+            }
+        });
     }
 
     /// 429/529: ein einziger kurzer Retry, solange das Zeitbudget es zulässt.
@@ -431,6 +467,13 @@ public static class Jev
 {
     /// Aktiv nur, wenn der Nutzer es eingeschaltet und einen Key hinterlegt hat.
     public static bool IsActive(AppSettings s) => s.JevEnabled && !string.IsNullOrWhiteSpace(s.JevApiKey);
+
+    /// Aufrufen, sobald gleich ein Transkript kommt (Aufnahmestart, Datei).
+    /// Nur wenn eingeschaltet — sonst kein Netzwerkzugriff.
+    public static void WarmUp(AppSettings s)
+    {
+        if (IsActive(s)) JevClient.WarmUp();
+    }
 
     public static string Model(AppSettings s) =>
         string.IsNullOrWhiteSpace(s.JevModel) ? JevQuestions.DefaultModel : s.JevModel.Trim();
