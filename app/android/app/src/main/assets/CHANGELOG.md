@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.9.1
+
+**Windows: Bugfixes & flüssigere Oberfläche**
+- Aufnahme beenden blockiert die Oberfläche nicht mehr: Das Warten auf die
+  letzten Mikrofonpuffer (150 ms) und das Zusammenkopieren des Mitschnitts
+  laufen jetzt nebenbei — Diktat-Stop, Abbrechen und Fenster-Aufnahme
+  bleiben sofort bedienbar
+- Wellenform: Pinsel und Zeitanzeige werden wiederverwendet statt 60-mal pro
+  Sekunde neu anzulegen — weniger Speicherdruck beim Dauerbetrieb
+- Ersetzungen lassen sich filtern (ab 7 Regeln, wie im Wörterbuch und auf
+  Android)
+- Smart Routing: Der Rauschen-Wurf („nicht im Verlauf speichern“) greift bei
+  Dateien über den whisper-cli-Rückfallweg nicht mehr, wenn die Dauer
+  unbekannt ist
+
+
 ## v3.9
 
 **Smart Routing zuverlässiger** — Android und Windows

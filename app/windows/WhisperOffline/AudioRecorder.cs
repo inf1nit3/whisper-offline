@@ -129,6 +129,11 @@ public sealed class AudioRecorder : ISampleSource
         return Snapshot(0);
     }
 
+    /// Stop außerhalb des UI-Threads: Warten auf die letzten Puffer (150 ms)
+    /// und die Resample-Kopie des kompletten Mitschnitts blockieren sonst
+    /// nach jeder Aufnahme kurz die Oberfläche.
+    public Task<float[]> StopAsync(bool cue = true) => Task.Run(() => Stop(cue));
+
     /// Bisher aufgenommene Samples, umgerechnet auf 16 kHz.
     public int SampleCount
     {

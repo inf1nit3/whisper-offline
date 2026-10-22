@@ -905,7 +905,7 @@ public partial class MainWindow : Window
         }
 
         busy = true;
-        var samples = recorder.Stop();
+        var samples = await recorder.StopAsync();
         var live = windowLive;
         windowLive = null;
         if (live != null) TranscriptBox.Text = transcriptBeforeLive;
@@ -1073,7 +1073,10 @@ public partial class MainWindow : Window
     private async Task FinishFileAsync(string text, double seconds, string status)
     {
         var decision = await ClassifyAsync(text, seconds, "file");
-        if (decision is { Discard: true })
+        // Rauschen-Wurf nur bei bekannter Dauer: Der whisper-cli-Rückfallweg
+        // übergibt 0 — dort darf eine kurze, echte Datei nicht allein wegen
+        // „Dauer < 3 s" aus dem Verlauf verschwinden.
+        if (decision is { Discard: true } && seconds > 0)
         {
             analysis = decision.Analysis;
             AppendTranscript(text, (float)seconds, "file", saveHistory: false);

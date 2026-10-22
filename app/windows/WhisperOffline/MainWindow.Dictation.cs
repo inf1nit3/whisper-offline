@@ -131,12 +131,12 @@ public partial class MainWindow
         (dictationEnhance ?? settings.EnhanceAuto) && Enhancer.IsConfigured(settings);
 
     /// Einzeltaste mit anderer Taste kombiniert: Aufnahme verwerfen.
-    private void CancelDictation()
+    private async void CancelDictation()
     {
         if (!dictating) return;
         dictationLive?.Stop();
         dictationLive = null;
-        recorder.Stop(cue: false);
+        _ = await recorder.StopAsync(cue: false);
         dictating = false;
         overlay?.HideOverlay();
         StatusLabel.Text = "Diktat verworfen";
@@ -145,7 +145,7 @@ public partial class MainWindow
     private async Task StopDictationAsync()
     {
         if (!dictating || !recorder.IsRecording) return;
-        var samples = recorder.Stop();
+        var samples = await recorder.StopAsync();
         dictating = false;
         var live = dictationLive;
         dictationLive = null;

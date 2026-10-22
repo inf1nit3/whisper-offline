@@ -618,11 +618,22 @@ public partial class MainWindow
     private Control ReplacementsTab()
     {
         var list = new StackPanel { Spacing = 8 };
+        // Wie im Wörterbuch: ab 7 Regeln lohnt sich ein Filter (Android-Parität)
+        var filterBox = new TextBox { Watermark = "Regeln filtern …", MinWidth = 220, IsVisible = settings.Replacements.Count >= 7 };
         void Refresh()
         {
             list.Children.Clear();
-            if (settings.Replacements.Count == 0) list.Children.Add(Hint("Noch keine Regeln. Typische Kandidaten: Abkürzungen, feste Schreibweisen, wiederkehrende Fehler."));
-            foreach (var r in settings.Replacements.ToList())
+            var query = (filterBox.Text ?? "").Trim();
+            var rules = string.IsNullOrEmpty(query)
+                ? settings.Replacements.ToList()
+                : settings.Replacements.Where(r =>
+                    r.From.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    r.To.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (rules.Count == 0)
+                list.Children.Add(Hint(settings.Replacements.Count == 0
+                    ? "Noch keine Regeln. Typische Kandidaten: Abkürzungen, feste Schreibweisen, wiederkehrende Fehler."
+                    : "Keine Regel passt zum Filter."));
+            foreach (var r in rules)
             {
                 var del = new Button { Content = "✕  Löschen", Classes = { "chip" }, Foreground = ErrorBrush };
                 del.Click += (_, _) => { settings.Replacements.Remove(r); settings.Save(); Refresh(); };
@@ -645,6 +656,7 @@ public partial class MainWindow
                 }));
             }
         }
+        filterBox.TextChanged += (_, _) => Refresh();
         Refresh();
         var from = new TextBox { Watermark = "Erkannt wird (z. B. Scheißewasser)", MinWidth = 220 };
         var to = new TextBox { Watermark = "Ersetzen durch (z. B. Scheisssewasser)", MinWidth = 220 };
@@ -671,6 +683,7 @@ public partial class MainWindow
                         new WrapPanel { ItemSpacing = 8, LineSpacing = 8, Children = { from, to, add } },
                     },
                 }),
+                filterBox,
                 list,
             },
         });

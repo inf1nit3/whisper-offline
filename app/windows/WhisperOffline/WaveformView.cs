@@ -41,6 +41,19 @@ public sealed class WaveformView : Control
     private const double ColumnGap = 2;     // Abstand zwischen Balken
     private const double ColumnStep = ColumnWidth + ColumnGap;
 
+    // Einmal gebaut statt pro Bild neu: die Welle läuft mit 60 fps, und
+    // Pinsel/Text pro Frame würden den GC dauerhaft beschäftigen.
+    private static readonly ImmutableSolidColorBrush PillBrush =
+        new(Color.FromArgb(165, 15, 18, 24));
+    private static readonly ImmutableSolidColorBrush MidlineBrush =
+        new(Color.FromArgb(41, 239, 68, 68));
+    private static readonly ImmutableSolidColorBrush HintBrush =
+        new(Color.FromArgb(220, 255, 205, 120));
+    private LinearGradientBrush? recordBrush, idleBrush;
+    private readonly LinearGradientBrush?[] workBrushes = new LinearGradientBrush?[Layers.Length];
+    private FormattedText? timeLabel, noSignalLabel;
+    private string timeLabelText = "";
+
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(16) };
     private readonly Stopwatch clock = new();
     private Func<float>? levelSource;
@@ -180,7 +193,7 @@ public sealed class WaveformView : Control
     {
         EnsureColumns(w);
 
-        var brush = new LinearGradientBrush
+        recordBrush ??= new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
             EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
@@ -192,7 +205,8 @@ public sealed class WaveformView : Control
                 new GradientStop(WithAlpha(RecordTo, 0.75), 1),
             },
         };
-        var pen = new Pen(new ImmutableSolidColorBrush(WithAlpha(RecordTo, 0.16)), 1);
+        var brush = recordBrush;
+        var pen = new Pen(MidlineBrush, 1);
 
         // Balken von rechts (neueste) nach links zeichnen
         double usable = h - 4;
@@ -216,28 +230,33 @@ public sealed class WaveformView : Control
         if (drawn > 0)
             context.DrawLine(pen, new Point(0, mid), new Point(w, mid));
 
-        // Aufnahmezeit rechts: helle Schrift auf dunkler Pille, über den Balken
+        // Aufnahmezeit rechts: helle Schrift auf dunkler Pille, über den
+        // Balken — der Text wechselt nur einmal pro Sekunde, also cachebar.
         var elapsed = DateTime.UtcNow - recordStart;
-        var label = new FormattedText(
-            $"{(int)elapsed.TotalMinutes:0}:{elapsed.Seconds:00}",
-            CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 11,
-            Brushes.White);
-        double tw = label.WidthIncludingTrailingWhitespace + 10;
-        double th = label.Height + 4;
+        var label = $"{(int)elapsed.TotalMinutes:0}:{elapsed.Seconds:00}";
+        if (timeLabel == null || timeLabelText != label)
+        {
+            timeLabelText = label;
+            timeLabel = new FormattedText(
+                label, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 11,
+                Brushes.White);
+        }
+        double tw = timeLabel.WidthIncludingTrailingWhitespace + 10;
+        double th = timeLabel.Height + 4;
         var pill = new Rect(w - tw - 4, mid - th / 2, tw, th);
-        context.DrawRectangle(new ImmutableSolidColorBrush(Color.FromArgb(165, 15, 18, 24)), null, pill, th / 2, th / 2);
-        context.DrawText(label, new Point(pill.X + 5, mid - label.Height / 2));
+        context.DrawRectangle(PillBrush, null, pill, th / 2, th / 2);
+        context.DrawText(timeLabel, new Point(pill.X + 5, mid - timeLabel.Height / 2));
 
         // Länger als zwei Sekunden nicht das geringste Signal: Das Mikrofon
         // liefert nichts (stumm, verboten oder falsches Gerät) — direkt in
         // der Welle sagen, statt eine tote Anzeige zu zeigen.
         if (silentTicks > 125)
         {
-            var hint = new FormattedText(
+            noSignalLabel ??= new FormattedText(
                 "Kein Eingangssignal — Mikrofon prüfen",
                 CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 11,
-                new ImmutableSolidColorBrush(Color.FromArgb(220, 255, 205, 120)));
-            context.DrawText(hint, new Point(10, mid - hint.Height / 2));
+                HintBrush);
+            context.DrawText(noSignalLabel, new Point(10, mid - noSignalLabel.Height / 2));
         }
     }
 
@@ -262,7 +281,8 @@ public sealed class WaveformView : Control
                 }
                 g.EndFigure(false);
             }
-            var brush = new LinearGradientBrush
+            // Pro Ebene ein Pinsel: die Deckkraft gehört zur Ebene
+            var brush = workBrushes[i] ??= new LinearGradientBrush
             {
                 StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
                 EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
@@ -281,7 +301,7 @@ public sealed class WaveformView : Control
     /// Dezente Ruhelinie — sichtbar auf hellen wie dunklen Karten.
     private void RenderIdle(DrawingContext context, double w, double mid)
     {
-        var brush = new LinearGradientBrush
+        idleBrush ??= new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
             EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
@@ -293,7 +313,7 @@ public sealed class WaveformView : Control
                 new GradientStop(Colors.Transparent, 1),
             },
         };
-        context.DrawLine(new Pen(brush, 2, lineCap: PenLineCap.Round), new Point(2, mid), new Point(w - 2, mid));
+        context.DrawLine(new Pen(idleBrush, 2, lineCap: PenLineCap.Round), new Point(2, mid), new Point(w - 2, mid));
     }
 
     /// Ringpuffer an die Breite anpassen: ~140 Balken passen immer, bei mehr
