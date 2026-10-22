@@ -1,5 +1,19 @@
 # Changelog
 
+## v3.10
+
+**Windows: Robustheit & Komfort**
+- Nur eine Instanz: Ein zweiter Start holt stattdessen das Fenster der
+  laufenden App nach vorn — kein zweites Tray-Symbol mehr, keine
+  Hotkey-Störung durch doppelte Registrierung
+- Fensterplatz und -größe bleiben über Neustarts erhalten (inkl.
+  maximiert; abgesteckte Monitore machen das Fenster nicht unsichtbar)
+- Das Transkript im Fenster überlebt Neustarts und Abstürze
+- Speicherschutz: Die Aufnahme im Fenster endet nach 30 Minuten
+  automatisch wie ein manueller Stopp — der Mitschnitt liegt komplett im
+  RAM, Längeres gehört in den Meeting-Modus (der in eine Datei schreibt)
+
+
 ## v3.9.1
 
 **Windows: Bugfixes & flüssigere Oberfläche**

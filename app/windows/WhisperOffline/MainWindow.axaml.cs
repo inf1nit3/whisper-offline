@@ -53,6 +53,9 @@ public partial class MainWindow : Window
         foreach (var item in LanguageBox.Items.OfType<ComboBoxItem>())
             if (item.Tag as string == language) LanguageBox.SelectedItem = item;
 
+        // Letzte Sitzung wiederherstellen: Transkript und Fensterplatz.
+        if (settings.LastTranscript.Length > 0) TranscriptBox.Text = settings.LastTranscript;
+        RestoreWindowBounds();
         LanguageBox.SelectionChanged += (_, _) =>
         {
             language = (LanguageBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "de";
@@ -94,20 +97,32 @@ public partial class MainWindow : Window
             _ = OpenPickerAsync();
         }
 
-        // In Tray minimieren statt beenden; Hotkey aktivieren
+        // In Tray minimieren statt beenden; Hotkey aktivieren. Bei jeder
+        // Gelegenheit Fensterplatz und Transkript mitnehmen — auch beim
+        // Verstecken in den Infobereich.
         Closing += (_, e) =>
         {
+            SaveSession();
             if (!allowClose) { e.Cancel = true; Hide(); }
         };
 
         // Eigene Titelleiste: Glyphen des Maximieren-Knopfs mitziehen und im
         // maximierten Zustand etwas Innenabstand halten (Randloses Fenster).
+        // Im Normalzustand werden Größe und Platz für die nächste Sitzung
+        // mitgeschrieben (maximiert/minimiert meldet Windows die Normalmaße).
         PropertyChanged += (_, e) =>
         {
             if (e.Property != WindowStateProperty) return;
             bool max = WindowState == WindowState.Maximized;
             MaximizeButton.Content = max ? "\uE923" : "\uE922";
             Padding = max ? new Thickness(7) : default;
+            if (WindowState == WindowState.Normal)
+            {
+                lastNormalX = Position.X;
+                lastNormalY = Position.Y;
+                lastNormalW = (int)Width;
+                lastNormalH = (int)Height;
+            }
         };
 
         SetupTray();
@@ -384,6 +399,84 @@ public partial class MainWindow : Window
 
     /// Wie Alt+F4: der Closing-Handler legt die App in den Infobereich.
     private void OnCloseWindow(object? sender, RoutedEventArgs e) => Close();
+
+    // ---------- Sitzung: Fensterplatz und Transkript über Neustarts ----------
+
+    private int lastNormalX, lastNormalY, lastNormalW, lastNormalH;
+
+    /// Gespeicherte Fenstergröße übernehmen, wenn der Platz noch auf einem
+    /// Bildschirm liegt — abgesteckte Monitore dürfen kein Fenster
+    /// unsichtbar machen.
+    private void RestoreWindowBounds()
+    {
+        if (settings.WindowWidth >= MinWidth && settings.WindowHeight >= MinHeight)
+        {
+            Width = settings.WindowWidth;
+            Height = settings.WindowHeight;
+            if (OnAnyScreen(settings.WindowX, settings.WindowY))
+            {
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Position = new PixelPoint(settings.WindowX, settings.WindowY);
+            }
+        }
+        if (settings.WindowMaximized)
+            Opened += (_, _) => WindowState = WindowState.Maximized;
+    }
+
+    private bool OnAnyScreen(int x, int y)
+    {
+        try
+        {
+            var screens = Screens.All;
+            if (screens.Count == 0) return false;
+            // Titelbereich-Anker in DIP etwa treffen (gemischte DPI: gut genug)
+            double scale = Screens.Primary?.Scaling ?? 1;
+            double dx = x / scale + 40, dy = y / scale + 10;
+            return screens.Any(s => s.WorkingArea.ToRect(s.Scaling).Contains(new Point(dx, dy)));
+        }
+        catch { return false; }
+    }
+
+    private void SaveSession()
+    {
+        settings.LastTranscript = TranscriptBox.Text ?? "";
+        if (lastNormalW >= MinWidth && lastNormalH >= MinHeight)
+        {
+            settings.WindowX = lastNormalX;
+            settings.WindowY = lastNormalY;
+            settings.WindowWidth = lastNormalW;
+            settings.WindowHeight = lastNormalH;
+        }
+        settings.WindowMaximized = WindowState == WindowState.Maximized;
+        settings.Save();
+    }
+
+    // ---------- Speicherschutz: Aufnahme im Fenster ist keine Daueraufnahme ----------
+
+    private DispatcherTimer? recordGuard;
+    private bool autoStopped;
+    private const int MaxRecordSeconds = 30 * 60;
+
+    /// Der Fenster-Mitschnitt liegt komplett im RAM (Quellrate). Nach einer
+    /// halben Stunde sind das ~350 MB — dann automatisch beenden wie ein
+    /// manueller Stopp; für längeres nimmt man den Meeting-Modus (schreibt
+    /// in eine Datei).
+    private void StartRecordGuard()
+    {
+        StopRecordGuard();
+        recordGuard = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        recordGuard.Tick += (_, _) =>
+        {
+            if (!recorder.IsRecording) { StopRecordGuard(); return; }
+            if (recorder.SampleCount < MaxRecordSeconds * 16000) return;
+            autoStopped = true;
+            StopRecordGuard();
+            OnRecordClick(null, null); // löst den regulären Stopp-Pfad aus
+        };
+        recordGuard.Start();
+    }
+
+    private void StopRecordGuard() => recordGuard?.Stop();
 
     /// Lesbarer Modellname für den Modell-Chip — wie modelDisplayName auf Android
     /// ("ggml-small-q5_1.bin" → "Whisper small", "ggml-parakeet-tdt-0.6b-v3-…" → "Parakeet v3").
@@ -901,10 +994,12 @@ public partial class MainWindow : Window
                     }));
                 windowLive.Start();
             }
+            StartRecordGuard();
             return;
         }
 
         busy = true;
+        StopRecordGuard();
         var samples = await recorder.StopAsync();
         var live = windowLive;
         windowLive = null;
@@ -949,6 +1044,11 @@ public partial class MainWindow : Window
         AppendTranscript(result, samples.Length / 16000f, "app", analysis);
         RenderAnalysis();
         StatusLabel.Text = ResultStatus(result, samples.Length / 16000.0) + (note != null ? " " + note : "");
+        if (autoStopped)
+        {
+            autoStopped = false;
+            StatusLabel.Text += " — Aufnahme nach 30 Minuten automatisch beendet (Speicherschutz; Längeres gehört in den Meeting-Modus).";
+        }
         Waveform.ShowIdle();
         busy = false;
     }
@@ -1192,6 +1292,8 @@ public partial class MainWindow : Window
         analysis = null;
         analysisHistoryText = null;
         RenderAnalysis();
+        settings.LastTranscript = "";
+        settings.Save();
     }
 
     // ---------- Teilen ----------

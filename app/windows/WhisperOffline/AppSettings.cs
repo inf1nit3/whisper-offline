@@ -133,6 +133,18 @@ public sealed class AppSettings
     /// Eigene Projekte für die Zuordnung; ohne eigene Liste die mitgelieferten.
     public List<JevProjectTag> JevProjectTags { get; set; } = new();
 
+    // ---- Fenster & Sitzung ----
+
+    /// Zuletzt genutzte Fenstergröße; 0 = Vorgabe. X/Y in Bildschirmkoordinaten.
+    public int WindowX { get; set; } = 0;
+    public int WindowY { get; set; } = 0;
+    public int WindowWidth { get; set; } = 0;
+    public int WindowHeight { get; set; } = 0;
+    public bool WindowMaximized { get; set; } = false;
+
+    /// Letztes Transkript, damit beim Neustart nichts verloren geht.
+    public string LastTranscript { get; set; } = "";
+
     // -----------------------------------------------------------------------
 
     private static readonly JsonSerializerOptions JsonOpts = new()
