@@ -452,7 +452,8 @@ public static class MeetingProcessor
             var (path, t) = pieces[i];
             var samples = WavFile.Read(path, (int)(t.Start * 16000), (int)(t.End * 16000));
             if (samples.Length < 8000) continue;
-            var text = await Task.Run(() => Transcriber.Transcribe(samples, s, s.Language == "auto" ? "" : s.Language, false), ct);
+            var text = await Task.Run(() => Transcriber.Transcribe(samples, s, s.Language == "auto" ? "" : s.Language,
+                false, shortCtx: true), ct);
             if (WhisperNative.WasCancelled) throw new OperationCanceledException();
             text = text.Replace('\n', ' ').Trim();
             if (text.Length > 0) utt.Add(new Utterance(t.Speaker, t.Start, t.End, text));

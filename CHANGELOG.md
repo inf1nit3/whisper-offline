@@ -1,5 +1,19 @@
 # Changelog
 
+## v3.11
+
+**Windows: Schnellere Meetings & robustere Downloads**
+- Meeting-Verarbeitung: Whisper encodiert jeden Redebeitrag nur noch so
+  lang, wie er tatsächlich ist, statt immer ein volles 30-Sekunden-Fenster
+  — bei vielen kurzen Beiträgen ein Vielfaches an Rechenzeit gespart
+- Live-Transkription profitiert von derselben Fensterkürzung: Vorschau
+  und Zwischenstände erscheinen spürbar schneller
+- Modell-Downloads lassen sich nach Abbruch fortsetzen (HTTP-Range); die
+  SHA256-Prüfung sichert weiterhin den kompletten Stand ab
+- Tray-Tooltip zeigt wieder den tatsächlich eingestellten Hotkey statt
+  immer der Vorgabe
+
+
 ## v3.10
 
 **Windows: Robustheit & Komfort**

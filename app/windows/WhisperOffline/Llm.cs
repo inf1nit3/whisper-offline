@@ -406,7 +406,11 @@ public static class Transcriber
     private static readonly object gate = new();
 
     /// Leerer String bei Abbruch oder Fehler (WhisperNative.WasCancelled unterscheidet).
-    public static string Transcribe(float[] samples, AppSettings s, string lang, bool translate)
+    /// [shortCtx]: null = Einstellung des Nutzers. true kürzt das Encoder-
+    /// Fenster auf die Audiolänge — bei vorgeschnittenen Stücken (Meeting-
+    /// Beiträge, Live-Vorschau) verschenkt das 30-s-Fenster nur Rechenzeit.
+    public static string Transcribe(float[] samples, AppSettings s, string lang, bool translate,
+        bool? shortCtx = null)
     {
         string raw;
         lock (gate)
@@ -416,7 +420,7 @@ public static class Transcriber
             {
                 WhisperNative.SetPrompt(TextMatching.Prompt(s.Vocabulary, VocabularyDefaults.Lower));
                 WhisperNative.SetTranslate(translate && !WhisperNative.IsParakeet);
-                var native = WhisperNative.Transcribe(samples, language, s.ShortCtx);
+                var native = WhisperNative.Transcribe(samples, language, shortCtx ?? s.ShortCtx);
                 if (native == null) return "";
                 raw = native;
             }
@@ -482,14 +486,14 @@ public sealed class LiveTranscriber
         if (cut > 0 || pending > 25 * SR)
         {
             int end = cut > 0 ? cut : audio.Length;
-            var text = Transcriber.Transcribe(audio[..end], settings, lang, translate);
+            var text = Transcriber.Transcribe(audio[..end], settings, lang, translate, shortCtx: true);
             if (text.Length > 0) committed.Append(text).Append(' ');
             committedSamples += end;
             preview = "";
         }
         else if (pending <= 12 * SR)
         {
-            preview = Transcriber.Transcribe(audio, settings, lang, translate);
+            preview = Transcriber.Transcribe(audio, settings, lang, translate, shortCtx: true);
         }
         onUpdate((committed + preview).Trim());
     }
@@ -501,7 +505,7 @@ public sealed class LiveTranscriber
         if (loop != null) await loop;
         int from = Math.Min(committedSamples, all.Length);
         var rest = all[from..];
-        var restText = rest.Length > SR / 4 ? Transcriber.Transcribe(rest, settings, lang, translate) : "";
+        var restText = rest.Length > SR / 4 ? Transcriber.Transcribe(rest, settings, lang, translate, shortCtx: true) : "";
         return (committed + restText).Trim();
     }
 

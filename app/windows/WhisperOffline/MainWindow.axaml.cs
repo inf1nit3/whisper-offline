@@ -372,10 +372,13 @@ public partial class MainWindow : Window
         {
             Icon = AppIcon.Get(),
             Menu = menu,
-            ToolTipText = "Scheisssewasser's Whisper — Strg+Alt+Leertaste: Diktat",
+            ToolTipText = "Scheisssewasser's Whisper",
         };
         tray.Clicked += (_, _) => { Show(); Activate(); };
         TrayIcon.SetIcons(Application.Current, new TrayIcons { tray });
+        // Tooltip mit dem echten (ggf. geänderten) Hotkey — UpdateHotkeyLabel
+        // lief vor SetupTray, als es das Symbol noch nicht gab.
+        UpdateHotkeyLabel();
     }
 
     // ---------- Eigene Titelleiste ----------
